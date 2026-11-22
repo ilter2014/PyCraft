@@ -86,7 +86,10 @@ void main() {
         p.y -= fall * 4.2;
         p.xz += wind * (drift * 0.42 * fall);
         p.xz += crossWind * (cos(u_time * 1.05 + in_flex * 19.0) * 0.32 * fall);
-        v_anim_alpha = 1.0 - smoothstep(0.78, 0.99, fall);
+        // Fade out before the loop and fade back in after respawn, so
+        // falling leaves never visibly pop from the canopy.
+        v_anim_alpha = smoothstep(0.02, 0.10, fall)
+                      * (1.0 - smoothstep(0.78, 0.94, fall));
     }
 
     if (u_anim_mode == 2) {

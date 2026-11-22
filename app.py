@@ -3329,6 +3329,7 @@ class Renderer:
 
         self.hotspots: dict[str, pygame.Rect] = {}
         self.inventory_cells: list[tuple[pygame.Rect, int]] = []
+        self.start_time = time.perf_counter()
         self.time = 0.0
 
         # Frustum-culling cache (rebuilt only when chunk meshes change).
@@ -3752,12 +3753,9 @@ class Renderer:
         p["u_zenith"].value = (0.135, 0.30, 0.72)
         p["u_horizon"].value = (0.70, 0.82, 0.96)
         p["u_haze"].value = (0.78, 0.86, 1.00)
-        p["u_below"].value = (0.04725, 0.105, 0.252)
-        p["u_cloud_offset"].value = (float(self.time * 0.0016), float(self.time * 0.0010))
-        p["u_cloud_coverage"].value = 0.48
+        p["u_cloud_offset"].value = (float(self.time * 0.00105), float(self.time * 0.00066))
+        p["u_cloud_coverage"].value = 0.62
         p["u_cloud_scale"].value = 0.00035
-        p["u_ridge_far"].value = (0.51, 0.57, 0.685)
-        p["u_ridge_near"].value = (0.305, 0.314, 0.402)
 
     def draw_world(self, game: "Game") -> None:
         ctx = self.ctx
@@ -4564,7 +4562,9 @@ class Renderer:
     # -- frame dispatch -----------------------------------------------------
 
     def draw(self, game: "Game") -> None:
-        self.time = time.perf_counter()
+        # Use elapsed time, not the large absolute performance-counter value.
+        # This preserves float precision in GLSL sin/cos animation inputs.
+        self.time = time.perf_counter() - self.start_time
         if game.state in ("menu", "multiplayer", "world_select", "create_world",
                           "delete_world_confirm", "host_world_select"):
             self.ctx.viewport = (0, 0, self.width, self.height)

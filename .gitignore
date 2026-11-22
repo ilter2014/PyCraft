@@ -47,3 +47,22 @@ Hytale_Extra_Ores_Backup*/
 .env
 .env.*
 !.env.example
+
+# Local research sources and generated test artifacts
+_research/
+*_Frames/
+*.mp4
+
+# Local worlds / saves (keep on the developer machine)
+Worlds/
+
+# Root-level screenshots and visual test outputs
+/AzureSkybox_*.png
+/PyCraft_*_Test*.png
+/PyCraft_*_View*.png
+/menu_next.png
+/video_check.jpg
+/water_angle.png
+
+# Local source snapshots
+app_before_*.py
