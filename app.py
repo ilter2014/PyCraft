@@ -64,6 +64,7 @@ TITLE = "PyCraft"
 DEFAULT_PORT = 25565
 NET_VERSION = 1
 MAX_CHAT = 200
+WORLD_SAVE_DIR = ROOT / "Worlds"
 
 CHUNK = 16
 WX, WY, WZ = 192, 96, 192
@@ -706,6 +707,8 @@ class World:
         self.mesh_version = 0
         self.dirty: set[tuple[int, int]] = set()
         self.total_faces = 0
+        # Latest value for every block changed since procedural generation.
+        self.edits: dict[tuple[int, int, int], int] = {}
 
     # -- generation ---------------------------------------------------------
 
@@ -987,6 +990,7 @@ class World:
         if self.blocks[x, y, z] == block:
             return False
         self.blocks[x, y, z] = block
+        self.edits[(int(x), int(y), int(z))] = int(block)
         self.mark_dirty(x, z)
         return True
 
@@ -995,10 +999,9 @@ class World:
             return False
         if self.blocks[x, y, z] == AIR:
             return False
-        self.blocks[x, y, z] = AIR
-        self.mark_dirty(x, z)
+        self.set_block(x, y, z, AIR)
         if y + 1 < WY and IS_PLANT[self.blocks[x, y + 1, z]]:
-            self.blocks[x, y + 1, z] = AIR
+            self.set_block(x, y + 1, z, AIR)
         return True
 
     def raycast(self, origin: np.ndarray, direction: np.ndarray,
@@ -1095,28 +1098,16 @@ class World:
         region = self._region(cx, cz, yh)
         src = region[1:17, 1:1 + yh, 1:17]
         ox, oz = cx * CHUNK, cz * CHUNK
-        cube_parts, cutout_parts, water_parts, plant_parts = [], [], [], []
+        cube_parts, water_parts, plant_parts = [], [], []
         face_total = 0
 
-        # Opaque cubes and alpha-cutout cubes are meshed separately.
-        # Cutout blocks (leaves, glass-like masks, etc.) must not be drawn
-        # in the opaque front-to-back pass before their alpha is evaluated.
-        cube_src = IS_CUBE[src] & IS_OPAQUE[src]
-        cutout_src = IS_CUBE[src] & ~IS_OPAQUE[src]
+        cube_src = IS_CUBE[src]
         water_src = IS_WATER[src]
         for di, (dx, dy, dz) in enumerate(DIRS):
             nb = region[1 + dx:17 + dx, 1 + dy:1 + yh + dy, 1 + dz:17 + dz]
-            # Opaque cubes can hide faces against an identical block.
-            # Alpha-cutout cubes (leaves) must KEEP faces between adjacent
-            # leaf blocks: their transparent texels reveal the next leaf
-            # layer behind them, exactly like Minecraft's leaf rendering.
             free = ~IS_OPAQUE[nb] & (nb != src)
-            cutout_free = ~IS_OPAQUE[nb]
-            for src_mask, parts, face_free in (
-                    (cube_src, cube_parts, free),
-                    (cutout_src, cutout_parts, cutout_free),
-                    (water_src, water_parts, free)):
-                mask = src_mask & face_free
+            for src_mask, parts in ((cube_src, cube_parts), (water_src, water_parts)):
+                mask = src_mask & free
                 pos = np.argwhere(mask)
                 n = pos.shape[0]
                 if n == 0:
@@ -1146,9 +1137,8 @@ class World:
                 return np.zeros((0, 6), dtype=np.float32)
             return parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
 
-        return ({"cube": cat(cube_parts), "cutout": cat(cutout_parts),
-                 "water": cat(water_parts), "plant": cat(plant_parts)},
-                face_total, ymax)
+        return ({"cube": cat(cube_parts), "water": cat(water_parts),
+                 "plant": cat(plant_parts)}, face_total, ymax)
 
     def upload_chunk(self, renderer, cx: int, cz: int, precomputed=None) -> None:
         old = self.meshes.pop((cx, cz), None)
@@ -1843,6 +1833,22 @@ class Game:
         self.mp_status = ""
         self.mp_busy = False
 
+        # Singleplayer world management and autosave.
+        self.active_world_name = ""
+        self.active_world_file: Path | None = None
+        self.world_name_input = "My World"
+        self.world_seed_input = ""
+        self.world_form_focus = "name"
+        self.world_list_scroll = 0
+        self.autosave_elapsed = 0.0
+        self.autosave_interval = 5.0
+        self.world_status = ""
+        self.delete_world_path: Path | None = None
+        self.delete_world_name = ""
+        self.selected_host_world: Path | None = None
+        self.create_for_host = False
+        self.create_return_state = "world_select"
+
         # Chat.
         self.chat_open = False
         self.chat_text = ""
@@ -1917,9 +1923,16 @@ class Game:
         self.set_captured(True)
 
     def host_game(self) -> None:
+        if self.selected_host_world is None:
+            self.mp_status = "Select a saved world before hosting"
+            return
+        if not self.open_saved_world(self.selected_host_world):
+            self.mp_status = self.world_status or "Could not open selected world"
+            return
         if self.net:
             self.net.close()
             self.net = None
+        # The host keeps the selected save attached so edits autosave to it.
         net = NetSession(self.name, True)
         try:
             port = net.host(DEFAULT_PORT, self.world.seed)
@@ -1961,6 +1974,8 @@ class Game:
     def load_world(self, seed: int, net: "NetSession | None" = None) -> None:
         if self.net:
             self.net.close()
+        self.active_world_name = ""
+        self.active_world_file = None
         self.renderer.release_world(self.world)
         self.world = build_world(self.renderer, seed)
         self.player = Player(self.world)
@@ -2071,6 +2086,174 @@ class Game:
             self.net.send_pos(self.player.pos, self.player.yaw,
                               self.player.pitch)
 
+    @staticmethod
+    def _world_slug(name: str) -> str:
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", name.strip()).strip("_-")
+        return (slug[:48] or "World")
+
+    def list_saved_worlds(self) -> list[dict]:
+        WORLD_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+        worlds = []
+        for path in WORLD_SAVE_DIR.glob("*.json"):
+            try:
+                with path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("format") != "pycraft-world":
+                    continue
+                worlds.append({"path": path, "name": str(data.get("name") or path.stem),
+                               "seed": int(data.get("seed", 0)),
+                               "updated": str(data.get("updated", ""))})
+            except Exception as exc:
+                print(f"[worlds] skipping invalid save {path.name}: {exc}", file=sys.stderr)
+        worlds.sort(key=lambda item: item["updated"], reverse=True)
+        return worlds
+
+    def delete_saved_world(self, path: Path) -> bool:
+        """Delete a world only after the user confirms the action."""
+        try:
+            resolved = path.resolve()
+            if resolved.parent != WORLD_SAVE_DIR.resolve() or resolved.suffix.lower() != ".json":
+                raise ValueError("Invalid world path")
+            if self.active_world_file and self.active_world_file.resolve() == resolved:
+                self.save_world(silent=True)
+                self.active_world_file = None
+                self.active_world_name = ""
+            resolved.unlink(missing_ok=True)
+            resolved.with_suffix(".json.tmp").unlink(missing_ok=True)
+            self.world_status = "World deleted"
+            return True
+        except Exception as exc:
+            self.world_status = f"Could not delete world: {exc}"
+            return False
+
+    def save_world(self, silent: bool = False) -> bool:
+        """Autosave the active world into its own JSON file."""
+        if self.net is not None and not self.net.is_host:
+            return False
+        if self.active_world_file is None:
+            return False
+        try:
+            WORLD_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "format": "pycraft-world", "version": 2,
+                "name": self.active_world_name,
+                "seed": int(self.world.seed),
+                "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "player": {
+                    "position": [round(float(v), 5) for v in self.player.pos],
+                    "yaw": float(self.player.yaw), "pitch": float(self.player.pitch),
+                    "fly": bool(self.player.fly),
+                },
+                "blocks": [[x, y, z, int(block)]
+                           for (x, y, z), block in sorted(self.world.edits.items())],
+            }
+            temp_path = self.active_world_file.with_suffix(".json.tmp")
+            with temp_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+            temp_path.replace(self.active_world_file)
+            self.autosave_elapsed = 0.0
+            if not silent:
+                self.toast = f"{self.active_world_name} saved"
+                self.toast_timer = 2.5
+            return True
+        except Exception as exc:
+            if not silent:
+                self.toast = f"Autosave failed: {exc}"
+                self.toast_timer = 5.0
+            print(f"[worlds] save failed: {exc}", file=sys.stderr)
+            return False
+
+    def create_world(self) -> None:
+        name = self.world_name_input.strip()[:48] or "My World"
+        seed_text = self.world_seed_input.strip()
+        try:
+            seed = int(seed_text) if seed_text else int.from_bytes(os.urandom(4), "big")
+            if not -(2**63) <= seed < 2**63:
+                raise ValueError("Seed must be a 64-bit integer")
+        except ValueError:
+            self.world_status = "Seed must be a valid 64-bit integer"
+            return
+        WORLD_SAVE_DIR.mkdir(parents=True, exist_ok=True)
+        base = self._world_slug(name)
+        path = WORLD_SAVE_DIR / f"{base}.json"
+        suffix = 2
+        while path.exists():
+            path = WORLD_SAVE_DIR / f"{base}_{suffix}.json"
+            suffix += 1
+        self.renderer.draw_loading(0.02, "CREATING WORLD")
+        if self.net:
+            self.net.close()
+            self.net = None
+        self.renderer.release_world(self.world)
+        self.world = build_world(self.renderer, seed)
+        self.player = Player(self.world)
+        self.player.respawn()
+        self.remote_players.clear()
+        self.active_world_name = name
+        self.active_world_file = path
+        self.autosave_elapsed = 0.0
+        self.state = "playing"
+        self.set_captured(True)
+        self.save_world(silent=True)
+        self.toast = f"Created {name}"
+        self.toast_timer = 3.0
+        if self.create_for_host:
+            self.create_for_host = False
+            self.selected_host_world = path
+            self.host_game()
+
+    def open_saved_world(self, path: Path) -> bool:
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if payload.get("format") != "pycraft-world" or int(payload.get("version", 0)) not in (1, 2):
+                raise ValueError("Unsupported world save format")
+            seed = int(payload["seed"])
+            edits = payload.get("blocks", [])
+            if not isinstance(edits, list) or len(edits) > WX * WY * WZ:
+                raise ValueError("Invalid block edit list")
+            player_data = payload.get("player", {})
+            pos = player_data.get("position", [])
+            if len(pos) != 3:
+                raise ValueError("Invalid player position")
+            position = [float(v) for v in pos]
+            if not all(math.isfinite(v) for v in position):
+                raise ValueError("Invalid player position")
+            if self.net:
+                self.net.close()
+                self.net = None
+            self.remote_players.clear()
+            self.renderer.draw_loading(0.02, "LOADING WORLD")
+            self.renderer.release_world(self.world)
+            self.world = build_world(self.renderer, seed)
+            for item in edits:
+                if not isinstance(item, list) or len(item) != 4:
+                    continue
+                x, y, z, block = (int(v) for v in item)
+                if 0 <= x < WX and 0 <= y < WY and 0 <= z < WZ and 0 <= block < len(BLOCKS):
+                    self.world.set_block(x, y, z, block)
+            self.world.flush_dirty(self.renderer)
+            self.player = Player(self.world)
+            self.player.pos[:] = position
+            self.player.yaw = float(player_data.get("yaw", self.world.spawn_yaw))
+            self.player.pitch = max(math.radians(-89), min(math.radians(89),
+                float(player_data.get("pitch", self.world.spawn_pitch))))
+            self.player.fly = bool(player_data.get("fly", False))
+            if self.player.collides():
+                self.player.respawn()
+            self.active_world_name = str(payload.get("name") or path.stem)
+            self.active_world_file = path
+            self.autosave_elapsed = 0.0
+            self.state = "playing"
+            self.set_captured(True)
+            self.toast = f"Loaded {self.active_world_name}"
+            self.toast_timer = 3.0
+            return True
+        except Exception as exc:
+            self.world_status = f"Could not load world: {exc}"
+            self.state = "world_select"
+            return False
+
     def start_play(self) -> None:
         self.state = "playing"
         self.set_captured(True)
@@ -2089,6 +2272,7 @@ class Game:
         self.set_captured(True)
 
     def to_title(self) -> None:
+        self.save_world(silent=True)
         self.state = "menu"
         self.chat_open = False
         self.set_captured(False)
@@ -2111,6 +2295,7 @@ class Game:
     def handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                self.save_world(silent=True)
                 self.running = False
             elif event.type == pygame.WINDOWFOCUSLOST and self.state == "playing":
                 self.pause()
@@ -2159,14 +2344,49 @@ class Game:
             elif self.state == "multiplayer":
                 self.mp_focus = False
                 self.state = "menu"
+            elif self.state == "host_world_select":
+                self.state = "multiplayer"
+            elif self.state == "delete_world_confirm":
+                self.delete_world_path = None
+                self.state = "world_select"
+            elif self.state == "world_select":
+                self.state = "menu"
+            elif self.state == "create_world":
+                self.create_for_host = False
+                self.state = self.create_return_state
             return
 
         if self.state == "menu":
-            if k in (pygame.K_RETURN, pygame.K_SPACE):
-                self.start_play()
-            elif k == pygame.K_m:
+            if k == pygame.K_m:
                 self.state = "multiplayer"
                 self.mp_status = ""
+            return
+
+        if self.state == "create_world":
+            if k == pygame.K_TAB:
+                self.world_form_focus = "seed" if self.world_form_focus == "name" else "name"
+            elif k == pygame.K_BACKSPACE:
+                if self.world_form_focus == "name":
+                    self.world_name_input = self.world_name_input[:-1]
+                else:
+                    self.world_seed_input = self.world_seed_input[:-1]
+            elif k in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self.create_world()
+            else:
+                ch = getattr(event, "unicode", "")
+                if ch and ch.isprintable():
+                    if self.world_form_focus == "name" and len(self.world_name_input) < 48:
+                        self.world_name_input += ch
+                    elif self.world_form_focus == "seed" and len(self.world_seed_input) < 20 and (ch.isdigit() or (ch == "-" and not self.world_seed_input)):
+                        self.world_seed_input += ch
+            return
+
+        if self.state == "world_select":
+            if k in (pygame.K_RETURN, pygame.K_n):
+                self.world_name_input = "My World"
+                self.world_seed_input = ""
+                self.world_status = ""
+                self.state = "create_world"
             return
 
         if self.state == "multiplayer":
@@ -2241,7 +2461,8 @@ class Game:
         if self.state == "menu":
             hit = self.renderer.hit_hotspot(pos)
             if hit == "play":
-                self.start_play()
+                self.state = "world_select"
+                self.world_status = ""
             elif hit == "multiplayer":
                 self.state = "multiplayer"
                 self.mp_focus = False
@@ -2249,10 +2470,76 @@ class Game:
             elif hit == "quit":
                 self.running = False
             return
+        if self.state == "world_select":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit == "create_world":
+                self.world_name_input = "My World"
+                self.world_seed_input = ""
+                self.world_status = ""
+                self.world_form_focus = "name"
+                self.state = "create_world"
+            elif hit and hit.startswith("world:"):
+                index = int(hit.split(":", 1)[1])
+                worlds = self.list_saved_worlds()
+                if 0 <= index < len(worlds):
+                    self.open_saved_world(worlds[index]["path"])
+            elif hit and hit.startswith("world_delete:"):
+                index = int(hit.split(":", 1)[1])
+                worlds = self.list_saved_worlds()
+                if 0 <= index < len(worlds):
+                    self.delete_world_path = worlds[index]["path"]
+                    self.delete_world_name = worlds[index]["name"]
+                    self.state = "delete_world_confirm"
+            elif hit == "world_back":
+                self.state = "menu"
+            return
+        if self.state == "delete_world_confirm":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit == "delete_confirm_yes" and self.delete_world_path is not None:
+                self.delete_saved_world(self.delete_world_path)
+                self.delete_world_path = None
+                self.state = "world_select"
+            elif hit == "delete_confirm_no":
+                self.delete_world_path = None
+                self.state = "world_select"
+            return
+        if self.state == "host_world_select":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit and hit.startswith("host_world:"):
+                index = int(hit.split(":", 1)[1])
+                worlds = self.list_saved_worlds()
+                if 0 <= index < len(worlds):
+                    self.selected_host_world = worlds[index]["path"]
+                    self.mp_status = "Selected world: " + worlds[index]["name"]
+                    self.state = "multiplayer"
+            elif hit == "host_world_back":
+                self.state = "multiplayer"
+            elif hit == "host_world_create":
+                self.create_for_host = True
+                self.create_return_state = "host_world_select"
+                self.world_name_input = "My World"
+                self.world_seed_input = ""
+                self.world_status = ""
+                self.world_form_focus = "name"
+                self.state = "create_world"
+            return
+        if self.state == "create_world":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit == "world_name":
+                self.world_form_focus = "name"
+            elif hit == "world_seed":
+                self.world_form_focus = "seed"
+            elif hit == "world_create":
+                self.create_world()
+            elif hit == "world_cancel":
+                self.create_for_host = False
+                self.state = self.create_return_state
+            return
         if self.state == "multiplayer":
             hit = self.renderer.hit_hotspot(pos)
             if hit == "host":
-                self.host_game()
+                self.state = "host_world_select"
+                self.mp_status = "Choose which saved world to host"
             elif hit == "join":
                 self.join_game()
             elif hit == "back":
@@ -2442,6 +2729,10 @@ class Game:
             self.handle_events()
             if self.state == "playing":
                 self.update(dt)
+                if self.active_world_file is not None and (self.net is None or self.net.is_host):
+                    self.autosave_elapsed += dt
+                    if self.autosave_elapsed >= self.autosave_interval:
+                        self.save_world(silent=True)
             self.render()
             self.fps_frames += 1
             self.fps_timer += dt
@@ -2450,6 +2741,7 @@ class Game:
                 self.fps_frames = 0
                 self.fps_timer = 0.0
             self.frame_count += 1
+        self.save_world(silent=True)
 
 
 # ----------------------------------------------------------------------------
@@ -2767,12 +3059,11 @@ class Renderer:
         self.panorama_tex = None
         self.title_tex = None
         self.title_size = (1024, 256)
-        pano = load_png("gui/title/background/pycraft_panorama.png")
+        pano = load_png("gui/title/background/panorama_0.png")
         if pano is not None:
             self.panorama_tex = self._upload_texture(pano, repeat=False,
                                                      linear=True, mipmaps=True)
-        # PyCraft uses its own title treatment instead of the Minecraft logo.
-        logo = None
+        logo = load_png("gui/title/minecraft.png")
         if logo is not None:
             self.title_tex = self._upload_texture(logo, repeat=False,
                                                   linear=True, mipmaps=True)
@@ -3291,26 +3582,12 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Alpha-cutout cube blocks (especially leaves).
-        # Render after opaque geometry with depth testing AND depth writes on.
-        # The fragment shader discards transparent texels, so they never hide
-        # geometry behind them; visible texels still occlude farther surfaces.
-        ctx.enable(moderngl.CULL_FACE)
-        ctx.depth_mask = True
-        prog["u_cutout"].value = 1
-        prog["u_alpha"].value = 1.0
-        for layers in visible:
-            mesh = layers.get("cutout")
-            if mesh:
-                mesh.vao.render(tri, vertices=mesh.count)
-
         # Cutout plants (two crossed quads, no back-face culling).
         ctx.disable(moderngl.CULL_FACE)
         for layers in visible:
             mesh = layers.get("plant")
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
-        ctx.enable(moderngl.CULL_FACE)
 
         # Translucent water, back to front.
         water = [layers["water"] for layers in reversed(visible)
@@ -3362,7 +3639,7 @@ class Renderer:
                            float(rp.pos[2]))
                 if (x - cam[0]) ** 2 + (z - cam[2]) ** 2 > 160.0 ** 2:
                     continue
-                player_skin = rp.skin_tex or self.skin_tex
+                player_skin = rp.skin_tex
                 if player_skin is not None:
                     player_skin.use(0)
                     self.skin_prog["u_vp"].write(vp_bytes)
@@ -3498,16 +3775,16 @@ class Renderer:
             self.text("PYCRAFT", w // 2, int(h * 0.13), scale=8,
                       align="center")
             logo_bottom = int(h * 0.13) + 66
-        self.text("A WORLD BUILT BLOCK BY BLOCK", w // 2, logo_bottom + 4,
-                  scale=2, color=col(190, 235, 205), align="center")
-        self.text("EXPLORE  -  BUILD  -  CREATE", w // 2, logo_bottom + 32,
-                  scale=2, color=col(225, 235, 225), align="center")
+        self.text("PYTHON EDITION", w // 2, logo_bottom + 4, scale=2,
+                  color=col(255, 240, 80), align="center")
+        self.text("REAL MINECRAFT BLOCK TEXTURES", w // 2, logo_bottom + 32,
+                  scale=2, color=col(210, 220, 230), align="center")
 
         bw = min(440, int(w * 0.38))
         bh = 52
         bx = (w - bw) // 2
         by = int(h * 0.50)
-        self.draw_button(bx, by, bw, bh, "PLAY", "play")
+        self.draw_button(bx, by, bw, bh, "SINGLEPLAYER", "play")
         self.draw_button(bx, by + bh + 14, bw, bh, "MULTIPLAYER", "multiplayer")
         self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
 
@@ -3521,6 +3798,102 @@ class Renderer:
                   f"real Assets textures",
                   w - 18, 14, scale=1, align="right", shadow=True,
                   color=col(235, 235, 235, 200))
+
+    def draw_world_select(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect_now(0, 0, w, h, col(10, 16, 24, 235))
+        self.text("SELECT WORLD", w // 2, 54, scale=6, align="center")
+        self.text("YOUR WORLDS", w // 2, 112, scale=2, align="center",
+                  color=col(190, 220, 245))
+        worlds = game.list_saved_worlds()
+        bw, bh = min(680, w - 100), 62
+        bx = (w - bw) // 2
+        by = 158
+        visible = worlds[:6]
+        if not visible:
+            self.text("No worlds yet. Create your first world!", w // 2, 250,
+                      scale=2, align="center", color=col(205, 215, 225))
+        for i, item in enumerate(visible):
+            yy = by + i * (bh + 10)
+            delete_w = 104
+            self.draw_button(bx, yy, bw - delete_w - 10, bh,
+                             f"{item['name']}   |   SEED {item['seed']}", f"world:{i}")
+            self.draw_button(bx + bw - delete_w, yy, delete_w, bh,
+                             "DELETE", f"world_delete:{i}")
+        create_y = min(h - 118, by + max(1, len(visible)) * (bh + 10) + 12)
+        self.draw_button(bx, create_y, bw, 50, "CREATE NEW WORLD", "create_world")
+        self.draw_button(bx, create_y + 62, bw, 44, "BACK", "world_back")
+        if game.world_status:
+            self.text(game.world_status, w // 2, h - 20, scale=1,
+                      align="center", color=col(255, 150, 130))
+
+    def draw_delete_world_confirm(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect_now(0, 0, w, h, col(0, 0, 0, 205))
+        pw, ph = 560, 220
+        px, py = (w - pw) // 2, (h - ph) // 2
+        self.rect(px, py, pw, ph, col(28, 31, 38, 250))
+        self.outline(px, py, pw, ph, 2, col(210, 100, 90, 240))
+        self.text("DELETE WORLD?", w // 2, py + 34, scale=4, align="center",
+                  color=col(255, 190, 175))
+        self.text(game.delete_world_name, w // 2, py + 94, scale=2, align="center")
+        self.text("This permanently deletes the world save.", w // 2, py + 124,
+                  scale=1, align="center", color=col(210, 215, 225))
+        self.draw_button(px + 35, py + 160, 225, 42, "DELETE WORLD", "delete_confirm_yes")
+        self.draw_button(px + 300, py + 160, 225, 42, "CANCEL", "delete_confirm_no")
+
+    def draw_host_world_select(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect_now(0, 0, w, h, col(10, 16, 24, 242))
+        self.text("CHOOSE HOST WORLD", w // 2, 64, scale=5, align="center")
+        self.text("Select a saved world for your multiplayer server", w // 2, 122,
+                  scale=2, align="center", color=col(190, 220, 245))
+        worlds = game.list_saved_worlds()
+        bw, bh = min(650, w - 100), 58
+        bx, by = (w - bw) // 2, 170
+        visible = worlds[:6]
+        if not visible:
+            self.text("No saved worlds. Create one first.", w // 2, 260,
+                      scale=2, align="center", color=col(220, 220, 220))
+        for i, item in enumerate(visible):
+            yy = by + i * (bh + 9)
+            marker = "  [SELECTED]" if game.selected_host_world == item["path"] else ""
+            self.draw_button(bx, yy, bw, bh,
+                             f"{item['name']}   |   SEED {item['seed']}{marker}",
+                             f"host_world:{i}")
+        bottom = min(h - 112, by + max(1, len(visible)) * (bh + 9) + 12)
+        self.draw_button(bx, bottom, bw, 44, "CREATE A WORLD", "host_world_create")
+        self.draw_button(bx, bottom + 54, bw, 40, "BACK", "host_world_back")
+
+    def draw_create_world(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect_now(0, 0, w, h, col(10, 16, 24, 240))
+        self.text("CREATE NEW WORLD", w // 2, 100, scale=5, align="center")
+        pw, ph = 650, 340
+        px, py = (w - pw) // 2, 205
+        self.rect(px, py, pw, ph, col(24, 29, 37, 235))
+        self.outline(px, py, pw, ph, 2, col(135, 155, 175, 220))
+        self.text("WORLD NAME", px + 35, py + 35, scale=2)
+        self.rect(px + 32, py + 66, pw - 64, 48, col(8, 12, 18, 245))
+        self.outline(px + 32, py + 66, pw - 64, 48, 2,
+                     col(255, 220, 90) if game.world_form_focus == "name" else col(100, 115, 130))
+        self.text(game.world_name_input + ("_" if game.world_form_focus == "name" else ""),
+                  px + 46, py + 82, scale=2)
+        self.hotspots["world_name"] = pygame.Rect(px + 32, py + 66, pw - 64, 48)
+        self.text("SEED (LEAVE EMPTY FOR RANDOM)", px + 35, py + 137, scale=2)
+        self.rect(px + 32, py + 168, pw - 64, 48, col(8, 12, 18, 245))
+        self.outline(px + 32, py + 168, pw - 64, 48, 2,
+                     col(255, 220, 90) if game.world_form_focus == "seed" else col(100, 115, 130))
+        self.text(game.world_seed_input + ("_" if game.world_form_focus == "seed" else ""),
+                  px + 46, py + 184, scale=2)
+        self.hotspots["world_seed"] = pygame.Rect(px + 32, py + 168, pw - 64, 48)
+        self.text("TAB TO SWITCH FIELDS", w // 2, py + 232, scale=1,
+                  align="center", color=col(175, 190, 205))
+        self.draw_button(px + 32, py + 270, 280, 48, "CREATE WORLD", "world_create")
+        self.draw_button(px + 338, py + 270, 280, 48, "CANCEL", "world_cancel")
+        if game.world_status:
+            self.text(game.world_status, w // 2, h - 34, scale=1,
+                      align="center", color=col(255, 145, 125))
 
     def draw_multiplayer(self, game: "Game") -> None:
         w, h = self.width, self.height
@@ -3719,7 +4092,7 @@ class Renderer:
         bx = (w - bw) // 2
         by = int(h * 0.41)
         self.draw_button(bx, by, bw, bh, "BACK TO GAME", "resume")
-        self.draw_button(bx, by + bh + 14, bw, bh, "QUIT TO TITLE", "title")
+        self.draw_button(bx, by + (bh + 14), bw, bh, "QUIT TO TITLE", "title")
         self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
         if game.net is not None:
             role = "HOST" if game.net.is_host else "CLIENT"
@@ -3727,9 +4100,9 @@ class Renderer:
                       f"{len(game.remote_players) + 1} players  -  T chat",
                       w // 2, h - 70, scale=2, align="center",
                       color=col(180, 225, 255))
-        self.text("World is paused - click a button to continue",
+        self.text("AUTOSAVE ENABLED  -  YOUR WORLD IS SAVED AUTOMATICALLY",
                   w // 2, h - 42, scale=2, align="center",
-                  color=col(210, 210, 210))
+                  color=col(160, 220, 170))
 
     def draw_inventory(self, game: "Game") -> None:
         w, h = self.width, self.height
@@ -3844,14 +4217,23 @@ class Renderer:
 
     def draw(self, game: "Game") -> None:
         self.time = time.perf_counter()
-        if game.state in ("menu", "multiplayer"):
+        if game.state in ("menu", "multiplayer", "world_select", "create_world",
+                          "delete_world_confirm", "host_world_select"):
             self.ctx.viewport = (0, 0, self.width, self.height)
             self.ctx.clear(0.10, 0.16, 0.24, 1.0)
             self._begin_ui()
             if game.state == "menu":
                 self.draw_menu(game)
-            else:
+            elif game.state == "multiplayer":
                 self.draw_multiplayer(game)
+            elif game.state == "world_select":
+                self.draw_world_select(game)
+            elif game.state == "create_world":
+                self.draw_create_world(game)
+            elif game.state == "delete_world_confirm":
+                self.draw_delete_world_confirm(game)
+            else:
+                self.draw_host_world_select(game)
             self._flush_ui()
             return
         self.draw_world(game)
