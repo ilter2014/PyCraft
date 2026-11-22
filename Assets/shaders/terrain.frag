@@ -5,6 +5,10 @@ uniform vec3 u_fog;
 uniform vec2 u_fog_range;
 uniform vec3 u_sun_dir;
 uniform vec2 u_wind_dir;
+uniform sampler2D u_scene_color;
+uniform sampler2D u_water_reflection;
+uniform vec2 u_screen;
+uniform mat4 u_refl_vp;
 uniform float u_time;
 uniform int u_anim_mode;
 uniform int u_cutout;
@@ -47,44 +51,73 @@ void main() {
     vec3 viewDir = normalize(u_cam - v_world);
 
     if (u_anim_mode == 2 && v_flex > 0.5 && abs(normal.y) > 0.55) {
-        normal = normalize(v_water_normal);
-        if (normal.y < 0.0) normal = -normal;
+        vec3 geoN = normalize(v_water_normal);
+        if (geoN.y < 0.0) geoN = -geoN;
 
-        float NoV = max(dot(normal, viewDir), 0.001);
-        float NoL = max(dot(normal, sunDir), 0.0);
+        // Small wind-driven ripples enrich the geometric Gerstner normals.
+        vec2 wind = normalize(u_wind_dir);
+        vec2 p = v_world.xz;
+        float rippleA = noise21(p * 2.2 + wind * u_time * 0.62);
+        float rippleB = noise21(p * 4.8 - wind * u_time * 0.91);
+        vec3 N = normalize(geoN + vec3((rippleA - 0.5) * 0.18,
+                                       0.0,
+                                       (rippleB - 0.5) * 0.18));
+
+        float NoV = clamp(dot(N, viewDir), 0.001, 1.0);
         float fresnel = 0.02 + 0.98 * pow(1.0 - NoV, 5.0);
+        vec2 screenUV = gl_FragCoord.xy / max(u_screen, vec2(1.0));
+        vec2 refractOffset = vec2(N.x, -N.z) * (0.004 + (1.0 - NoV) * 0.012);
+        vec3 refracted = texture(u_scene_color,
+                                 clamp(screenUV + refractOffset, vec2(0.001), vec2(0.999))).rgb;
 
-        // Approximate sky reflection with a view-dependent horizon tint.
-        vec3 skyReflection = mix(vec3(0.035, 0.115, 0.145),
-                                 u_fog * vec3(1.12, 1.10, 1.06),
-                                 clamp(0.42 + normal.y * 0.52, 0.0, 1.0));
-        vec3 deepWater = vec3(0.004, 0.035, 0.052);
-        vec3 bodyWater = vec3(0.012, 0.095, 0.115);
-        float depthTint = clamp(0.42 + v_wave_height * 0.42, 0.0, 1.0);
-        vec3 waterColor = mix(deepWater, bodyWater, depthTint);
-        vec3 col = mix(waterColor, skyReflection, fresnel * 0.82);
+        // Project the actual water world position through the mirrored camera.
+        vec4 reflClip = u_refl_vp * vec4(v_world, 1.0);
+        vec2 reflUV = reflClip.xy / max(reflClip.w, 0.0001) * 0.5 + 0.5;
+        vec3 reflected = texture(u_water_reflection,
+                                 clamp(reflUV, vec2(0.001), vec2(0.999))).rgb;
+        if (reflClip.w <= 0.0 || any(lessThan(reflUV, vec2(0.0))) ||
+            any(greaterThan(reflUV, vec2(1.0)))) {
+            reflected = mix(u_fog * 0.82, vec3(0.08, 0.17, 0.24),
+                            clamp(N.y, 0.0, 1.0));
+        }
 
-        // Tight sun glints and broader highlights follow the actual wave normal.
-        vec3 reflectedSun = reflect(-sunDir, normal);
-        float sunGlint = pow(max(dot(reflectedSun, viewDir), 0.0), 110.0);
-        float softGlint = pow(max(dot(reflectedSun, viewDir), 0.0), 28.0);
-        col += vec3(1.0, 0.78, 0.52) * sunGlint * (0.55 + NoL * 0.65);
-        col += vec3(0.36, 0.53, 0.55) * softGlint * 0.10;
+        vec3 deepWater = vec3(0.006, 0.045, 0.064);
+        vec3 col = mix(refracted, reflected, clamp(fresnel * 0.94 + 0.025, 0.0, 1.0));
+        col = mix(col, deepWater, 0.12 + 0.08 * (1.0 - clamp(v_wave_height + 0.5, 0.0, 1.0)));
 
-        // Crest foam breaks into irregular patches instead of a continuous stripe.
-        float n1 = noise21(v_world.xz * 1.8 + vec2(u_time * 0.12, -u_time * 0.08));
-        float n2 = noise21(v_world.xz * 4.2 - vec2(u_time * 0.19, u_time * 0.06));
+        // GGX-like sun glints follow the animated surface normal.
+        vec3 halfDir = normalize(sunDir + viewDir);
+        float NoL = max(dot(N, sunDir), 0.0);
+        float NoH = max(dot(N, halfDir), 0.0);
+        float VoH = max(dot(viewDir, halfDir), 0.0);
+        float rough = 0.16;
+        float a = rough * rough;
+        float a2 = a * a;
+        float denom = NoH * NoH * (a2 - 1.0) + 1.0;
+        float D = a2 / max(3.14159265 * denom * denom, 0.0001);
+        float k = (rough + 1.0) * (rough + 1.0) / 8.0;
+        float Gv = NoV / (NoV * (1.0 - k) + k);
+        float Gl = NoL / (NoL * (1.0 - k) + k);
+        float F = 0.02 + 0.98 * pow(1.0 - VoH, 5.0);
+        float specular = D * Gv * Gl * F / max(4.0 * NoV * NoL, 0.001);
+        col += vec3(1.0, 0.79, 0.56) * specular * NoL * 0.34;
+
+        // Broken crest foam: noise prevents a uniform white outline.
+        float n1 = noise21(v_world.xz * 1.8 + wind * u_time * 0.16);
+        float n2 = noise21(v_world.xz * 4.3 - wind * u_time * 0.22);
         float foamNoise = n1 * 0.62 + n2 * 0.38;
-        float crest = smoothstep(0.34, 0.72, v_water_crest + (foamNoise - 0.5) * 0.38);
-        crest *= smoothstep(0.18, 0.72, v_wave_height + 0.12);
-        vec3 foamColor = mix(vec3(0.66, 0.79, 0.78), vec3(0.94, 0.94, 0.86),
-                             max(dot(normal, sunDir), 0.0) * 0.65);
-        col = mix(col, foamColor, crest * 0.78);
+        float crest = smoothstep(0.30, 0.76,
+                                 v_water_crest + (foamNoise - 0.5) * 0.42);
+        crest *= smoothstep(0.08, 0.62, v_wave_height + 0.12);
+        vec3 foamColor = mix(vec3(0.66, 0.78, 0.78),
+                             vec3(0.96, 0.95, 0.87),
+                             max(dot(N, sunDir), 0.0) * 0.62);
+        col = mix(col, foamColor, crest * 0.66);
 
         float distanceToCamera = distance(v_world, u_cam);
         float fog = smoothstep(u_fog_range.x, u_fog_range.y, distanceToCamera);
-        col = mix(col, u_fog, fog);
-        frag = vec4(col, 0.90 * u_alpha);
+        col = mix(col, u_fog, fog * 0.82);
+        frag = vec4(max(col, vec3(0.0)), 1.0);
         return;
     }
 

@@ -1,4 +1,4 @@
-﻿"""PyCraft - a small Minecraft-style voxel sandbox (optimized build).
+"""PyCraft - a small Minecraft-style voxel sandbox (optimized build).
 
 A single-file Python game that loads the real Minecraft block textures from
 ``Assets/block`` and builds a first-person, editable voxel world with OpenGL.
@@ -79,6 +79,43 @@ FOLIAGE_TINT = (135, 205, 75)
 BIRCH_TINT = (158, 218, 100)
 SPRUCE_TINT = (105, 170, 80)
 WATER_TINT = (58, 120, 220)
+
+# Water rendering is tuned through Assets/water_settings.json; invalid or
+# missing values fall back safely without preventing the game from starting.
+WATER_SETTINGS_DEFAULTS = {
+    "wave_strength": 0.50,
+    "wave_spacing": 1.50,
+    "wave_speed": 0.85,
+    "wave_count": 6,
+    "shore_fade_distance": 2.0,
+    "foam_amount": 0.30,
+    "detail_strength": 0.58,
+    "roughness": 0.22,
+}
+
+def load_water_settings() -> dict:
+    settings = dict(WATER_SETTINGS_DEFAULTS)
+    path = ASSET_DIR / "water_settings.json"
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            for key, default in WATER_SETTINGS_DEFAULTS.items():
+                value = loaded.get(key, default)
+                if isinstance(value, (int, float)) and math.isfinite(value):
+                    settings[key] = value
+    except (OSError, ValueError, TypeError):
+        pass
+    settings["wave_strength"] = float(np.clip(settings["wave_strength"], 0.0, 1.5))
+    settings["wave_spacing"] = float(np.clip(settings["wave_spacing"], 0.5, 4.0))
+    settings["wave_speed"] = float(np.clip(settings["wave_speed"], 0.1, 2.0))
+    settings["wave_count"] = int(np.clip(round(settings["wave_count"]), 1, 8))
+    settings["shore_fade_distance"] = float(np.clip(settings["shore_fade_distance"], 0.5, 8.0))
+    settings["foam_amount"] = float(np.clip(settings["foam_amount"], 0.0, 1.0))
+    settings["detail_strength"] = float(np.clip(settings["detail_strength"], 0.0, 2.0))
+    settings["roughness"] = float(np.clip(settings["roughness"], 0.02, 1.0))
+    return settings
+
+WATER_SETTINGS = load_water_settings()
 
 SKY_TOP = (0.30, 0.55, 0.92)
 SKY_HORIZON = (0.76, 0.87, 0.98)
@@ -696,7 +733,7 @@ def _quads(pw: np.ndarray, quad: np.ndarray, tile_uv: np.ndarray,
     return out.reshape(-1, 7)
 
 
-def _water_top_quads(pw: np.ndarray, tile_uv: np.ndarray, shade, segments: int = 6) -> np.ndarray:
+def _water_top_quads(pw: np.ndarray, tile_uv: np.ndarray, shade, segments: int = 6, shore_distance=None) -> np.ndarray:
     """Subdivide each water top into a grid for real geometric wave motion."""
     parts = []
     n = len(pw)
@@ -716,6 +753,22 @@ def _water_top_quads(pw: np.ndarray, tile_uv: np.ndarray, shade, segments: int =
                                        uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1, uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0), axis=1)
             verts[:, :, 4] = np.stack((uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1,
                                        uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0), axis=1)
+            if shore_distance is not None:
+                vx = pw[:, 0, None] + np.array([x0, x1, x1, x0], dtype=np.float32)[None, :]
+                vz = pw[:, 2, None] + np.array([z1, z1, z0, z0], dtype=np.float32)[None, :]
+                gx_i = np.clip(np.floor(vx).astype(np.int32), 0, WX - 2)
+                gz_i = np.clip(np.floor(vz).astype(np.int32), 0, WZ - 2)
+                fx = vx - gx_i
+                fz = vz - gz_i
+                d00 = shore_distance[gx_i, gz_i]
+                d10 = shore_distance[gx_i + 1, gz_i]
+                d01 = shore_distance[gx_i, gz_i + 1]
+                d11 = shore_distance[gx_i + 1, gz_i + 1]
+                d0 = d00 * (1.0 - fx) + d10 * fx
+                d1 = d01 * (1.0 - fx) + d11 * fx
+                dist = d0 * (1.0 - fz) + d1 * fz
+                fade = np.clip((dist - 0.25) / max(WATER_SETTINGS["shore_fade_distance"], 0.25), 0.0, 1.0)
+                verts[:, :, 6] = fade * fade * (3.0 - 2.0 * fade)
             parts.append(verts.reshape(-1, 7))
     return np.concatenate(parts, axis=0)
 
@@ -770,6 +823,7 @@ class World:
         self.seed = seed
         self.blocks = np.zeros((WX, WY, WZ), dtype=np.uint16)
         self.heights = np.zeros((WX, WZ), dtype=np.int16)
+        self.shore_distance = None
         self.spawn = (WX // 2 + 0.5, 64.0, WZ // 2 + 0.5)
         self.spawn_yaw = math.radians(35.0)
         self.spawn_pitch = math.radians(-8.0)
@@ -806,6 +860,7 @@ class World:
         heights -= river * 13.0
         heights = np.clip(heights, 4, WY - 20).astype(np.int16)
         self.heights = heights
+        self.shore_distance = None
 
         world = self.blocks
         world.fill(AIR)
@@ -1169,7 +1224,7 @@ class World:
         region = self._region(cx, cz, yh)
         src = region[1:17, 1:1 + yh, 1:17]
         ox, oz = cx * CHUNK, cz * CHUNK
-        cube_parts, foliage_parts, water_parts, plant_parts, falling_leaf_parts, shore_parts = [], [], [], [], [], []
+        cube_parts, foliage_parts, water_parts, water_surface_parts, plant_parts, falling_leaf_parts, shore_parts = [], [], [], [], [], [], []
         face_total = 0
 
         cube_src = IS_CUBE[src] & ~IS_LEAF[src]
@@ -1190,7 +1245,24 @@ class World:
                 pw[:, 2] += oz
                 tiles = FACE_TILE[di][src[mask]]
                 if src_mask is water_src and di == 3:
-                    parts.append(_water_top_quads(pw, TILE_UVS[tiles], FACE_SHADE[di], segments=6))
+                    # Fade wave energy over the final two water blocks before land.
+                    # The sea plane itself stays at the full one-block water height.
+                    if self.shore_distance is None:
+                        land = self.heights >= SEA_LEVEL
+                        field = np.full(self.heights.shape, 99.0, dtype=np.float32)
+                        for ddx in range(-4, 5):
+                            for ddz in range(-4, 5):
+                                x0, x1 = max(0, -ddx), min(WX, WX - ddx)
+                                z0, z1 = max(0, -ddz), min(WZ, WZ - ddz)
+                                if x0 >= x1 or z0 >= z1:
+                                    continue
+                                shifted = land[x0 + ddx:x1 + ddx, z0 + ddz:z1 + ddz]
+                                target = field[x0:x1, z0:z1]
+                                target[shifted] = np.minimum(target[shifted], math.hypot(ddx, ddz))
+                        self.shore_distance = field
+                    water_surface_parts.append(
+                        _water_top_quads(pw, TILE_UVS[tiles], FACE_SHADE[di],
+                                         segments=6, shore_distance=self.shore_distance))
                     face_total += n * 36
                 else:
                     parts.append(_quads(pw, CORNERS[di], TILE_UVS[tiles], FACE_SHADE[di]))
@@ -1230,7 +1302,7 @@ class World:
             return parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
 
         return ({"cube": cat(cube_parts), "foliage": cat(foliage_parts),
-                 "water": cat(water_parts), "plant": cat(plant_parts),
+                 "water": cat(water_parts), "water_surface": cat(water_surface_parts), "plant": cat(plant_parts),
                  "leaf_fall": cat(falling_leaf_parts), "shore": cat(shore_parts)},
                 face_total, ymax)
 
@@ -2917,31 +2989,7 @@ void main() {
 }
 """
 
-SKY_FS = """
-#version 330
-uniform vec3 u_forward;
-uniform vec3 u_right;
-uniform vec3 u_up;
-uniform vec2 u_tan;
-uniform vec3 u_sun;
-uniform vec3 u_top;
-uniform vec3 u_horizon;
-in vec2 v_ndc;
-out vec4 frag;
-void main() {
-    vec3 dir = normalize(u_forward + u_right * (v_ndc.x * u_tan.x)
-                         + u_up * (v_ndc.y * u_tan.y));
-    float h = clamp(dir.y, -1.0, 1.0);
-    vec3 col = mix(u_horizon, u_top, pow(clamp(h, 0.0, 1.0), 0.55));
-    if (h < 0.0) {
-        col = mix(u_horizon, vec3(0.42, 0.55, 0.66), clamp(-h * 2.2, 0.0, 1.0));
-    }
-    float sd = max(dot(dir, u_sun), 0.0);
-    col += vec3(1.0, 0.94, 0.75) * pow(sd, 900.0) * 1.6;
-    col += vec3(1.0, 0.84, 0.58) * pow(sd, 24.0) * 0.12;
-    frag = vec4(col, 1.0);
-}
-"""
+
 
 LINE_VS = """
 #version 330
@@ -3130,9 +3178,30 @@ class Renderer:
         self.terrain_prog = ctx.program(
             vertex_shader=shader_source("terrain.vert", TERRAIN_VS),
             fragment_shader=shader_source("terrain.frag", TERRAIN_FS))
+
+        # Use Azure Water's original fragment shader directly from the research
+        # project. Its vertex input is adapted only to PyCraft's world-space
+        # block mesh and per-vertex shoreline fade attribute.
+        azure_shader_dir = ROOT / "_research" / "azure-water" / "water" / "shaders"
+        azure_water_vs = (azure_shader_dir / "water.vert").read_text(encoding="utf-8")
+        azure_water_fs = (azure_shader_dir / "water.frag").read_text(encoding="utf-8")
+        azure_water_vs = azure_water_vs.replace(
+            "in vec2 in_pos;", "in vec3 in_pos;\nin float in_flex;")
+        azure_water_vs = azure_water_vs.replace(
+            "uniform vec2 u_center;", "")
+        azure_water_vs = azure_water_vs.replace(
+            "vec2 xz = in_pos + u_center;", "vec2 xz = in_pos.xz;")
+        azure_water_vs = azure_water_vs.replace(
+            "vec3 P = vec3(xz.x, 0.0, xz.y);", "vec3 P = in_pos;")
+        azure_water_vs = azure_water_vs.replace(
+            "float Aeff = A * lod;", "float Aeff = A * lod * clamp(in_flex, 0.0, 1.0);")
+        self.azure_water_prog = ctx.program(vertex_shader=azure_water_vs,
+                                            fragment_shader=azure_water_fs)
+        self.azure_water_vaos = {}
+        azure_sky_fs = (ROOT / "Assets" / "shaders" / "sky.frag").read_text(encoding="utf-8")
         self.sky_prog = ctx.program(
             vertex_shader=shader_source("sky.vert", SKY_VS),
-            fragment_shader=shader_source("sky.frag", SKY_FS))
+            fragment_shader=azure_sky_fs)
         self.line_prog = ctx.program(vertex_shader=LINE_VS,
                                      fragment_shader=LINE_FS)
         self.ui_prog = ctx.program(vertex_shader=UI_VS,
@@ -3148,6 +3217,21 @@ class Renderer:
                                       dtype="f4").tobytes())
         self.sky_vao = ctx.vertex_array(self.sky_prog,
                                         [(sky_vbo, "2f", "in_pos")])
+
+        # Azure Water integration: a screen-color copy for refraction and a
+        # mirrored procedural-sky pass for projective planar reflections.
+        # Keep these targets independent from the voxel world's depth buffer.
+        rw, rh = max(2, width // 2), max(2, height // 2)
+        self.water_scene_tex = ctx.texture((width, height), 4, dtype="f2")
+        self.water_scene_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.water_scene_depth = ctx.depth_texture((width, height))
+        self.water_scene_depth.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        self.water_scene_fbo = ctx.framebuffer(
+            color_attachments=[self.water_scene_tex],
+            depth_attachment=self.water_scene_depth)
+        self.water_refl_tex = ctx.texture((rw, rh), 4, dtype="f2")
+        self.water_refl_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.water_refl_fbo = ctx.framebuffer(color_attachments=[self.water_refl_tex])
 
         # Block selection wireframe (unit cube).
         edges = []
@@ -3183,8 +3267,7 @@ class Renderer:
         self.atlas_tex = self._upload_texture(ATLAS_IMAGE, repeat=False,
                                               linear=False, kind="atlas")
         self.font_tex, self.glyphs = self._load_font()
-        self.cloud_vao, self.cloud_tex, self.cloud_count = \
-            self._make_cloud_layer()
+        self.cloud_vao, self.cloud_tex, self.cloud_count = None, None, 0
         self.panorama_tex = None
         self.title_tex = None
         self.title_size = (1024, 256)
@@ -3353,6 +3436,9 @@ class Renderer:
     def release_chunk(self, meshes: dict[str, GpuMesh]) -> None:
         for mesh in meshes.values():
             try:
+                azure_vao = self.azure_water_vaos.pop(id(mesh), None)
+                if azure_vao is not None:
+                    azure_vao.release()
                 mesh.vao.release()
                 mesh.vbo.release()
             except Exception:
@@ -3644,6 +3730,35 @@ class Renderer:
 
     # -- world rendering ----------------------------------------------------
 
+    # -- world rendering ----------------------------------------------------
+
+    def _set_azure_sky_uniforms(self, forward, right, up, tan_x, tan_y, reflected=False):
+        """Use Azure Water's procedural sky in both the camera and water reflection passes."""
+        if reflected:
+            forward = np.array([forward[0], -forward[1], forward[2]], dtype=np.float32)
+            up = np.array([up[0], -up[1], up[2]], dtype=np.float32)
+            sun = np.array([SUN_DIR[0], -SUN_DIR[1], SUN_DIR[2]], dtype=np.float32)
+        else:
+            sun = np.asarray(SUN_DIR, dtype=np.float32)
+        p = self.sky_prog
+        p["u_forward"].value = tuple(float(v) for v in forward)
+        p["u_right"].value = tuple(float(v) for v in right)
+        p["u_up"].value = tuple(float(v) for v in up)
+        p["u_tan"].value = (float(tan_x), float(tan_y))
+        p["u_sun_dir"].value = tuple(float(v) for v in sun)
+        p["u_sun_color"].value = (1.0, 0.93, 0.83)
+        p["u_sun_intensity"].value = 3.2
+        p["u_disc_bright"].value = 20.0
+        p["u_zenith"].value = (0.135, 0.30, 0.72)
+        p["u_horizon"].value = (0.70, 0.82, 0.96)
+        p["u_haze"].value = (0.78, 0.86, 1.00)
+        p["u_below"].value = (0.04725, 0.105, 0.252)
+        p["u_cloud_offset"].value = (float(self.time * 0.0016), float(self.time * 0.0010))
+        p["u_cloud_coverage"].value = 0.48
+        p["u_cloud_scale"].value = 0.00035
+        p["u_ridge_far"].value = (0.51, 0.57, 0.685)
+        p["u_ridge_near"].value = (0.305, 0.314, 0.402)
+
     def draw_world(self, game: "Game") -> None:
         ctx = self.ctx
         world = game.world
@@ -3673,13 +3788,7 @@ class Renderer:
         ctx.depth_mask = False
         ctx.disable(moderngl.CULL_FACE)
         ctx.disable(moderngl.BLEND)
-        self.sky_prog["u_forward"].value = tuple(float(v) for v in forward)
-        self.sky_prog["u_right"].value = tuple(float(v) for v in right)
-        self.sky_prog["u_up"].value = tuple(float(v) for v in up)
-        self.sky_prog["u_tan"].value = (float(tan_x), float(tan_y))
-        self.sky_prog["u_sun"].value = tuple(float(v) for v in SUN_DIR)
-        self.sky_prog["u_top"].value = SKY_TOP
-        self.sky_prog["u_horizon"].value = SKY_HORIZON
+        self._set_azure_sky_uniforms(forward, right, up, tan_x, tan_y, reflected=False)
         self.sky_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # Terrain.
@@ -3747,46 +3856,122 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Translucent water, back to front, with animated surface waves.
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 2
-        water = [layers["water"] for layers in reversed(visible)
-                 if "water" in layers]
-        if water:
+        # Water block sides retain the voxel material; only the top surface
+        # is rendered by Azure Water's original Gerstner/reflection shader.
+        water_sides = [layers["water"] for layers in reversed(visible)
+                       if "water" in layers]
+        water_surfaces = [layers["water_surface"] for layers in reversed(visible)
+                          if "water_surface" in layers]
+        if water_sides:
+            prog["u_anim_mode"].value = 0
+            prog["u_cutout"].value = 0
+            prog["u_alpha"].value = 0.72
             ctx.enable(moderngl.BLEND)
             ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
             ctx.depth_mask = False
-            ctx.enable(moderngl.CULL_FACE)
-            prog["u_cutout"].value = 0
-            prog["u_alpha"].value = 1.0
-            for mesh in water:
+            for mesh in water_sides:
                 mesh.vao.render(tri, vertices=mesh.count)
             ctx.depth_mask = True
             ctx.disable(moderngl.BLEND)
             prog["u_cutout"].value = 1
+            prog["u_alpha"].value = 1.0
+
+        if water_surfaces:
+            # 1. Mirrored sky reflection, matching Azure Water's planar pass.
+            water_level = float(SEA_LEVEL + 1)
+            mirror_y = np.eye(4, dtype=np.float32)
+            mirror_y[1, 1] = -1.0
+            mirror_y[1, 3] = 2.0 * water_level
+            reflected_vp = proj @ view @ mirror_y
+
+            rw, rh = self.water_refl_tex.size
+            self.water_refl_fbo.use()
+            ctx.viewport = (0, 0, rw, rh)
+            ctx.disable(moderngl.DEPTH_TEST)
+            ctx.disable(moderngl.CULL_FACE)
+            ctx.disable(moderngl.BLEND)
+            ctx.depth_mask = False
+            self._set_azure_sky_uniforms(forward, right, up, tan_x, tan_y, reflected=True)
+            self.sky_vao.render(moderngl.TRIANGLES, vertices=3)
+
+            # 2. Copy opaque world color and depth for Azure's refraction/absorption.
+            ctx.screen.use()
+            ctx.viewport = (0, 0, w, h)
+            ctx.copy_framebuffer(self.water_scene_fbo, ctx.screen)
+            ctx.depth_mask = True
+            ctx.enable(moderngl.DEPTH_TEST)
+            ctx.enable(moderngl.CULL_FACE)
+
+            # 3. Azure Water's actual fragment shader on the voxel world's water tops.
+            wp = self.azure_water_prog
+            wp["u_view_proj"].write(vp_bytes)
+            wp["u_refl_view_proj"].write(upload_mat(reflected_vp))
+            wp["u_cam_xz"].value = (float(cam[0]), float(cam[2]))
+            wp["u_cam_pos"].value = tuple(float(v) for v in cam)
+            wp["u_screen"].value = (float(w), float(h))
+            wp["u_near"].value = 0.05
+            wp["u_far"].value = 420.0
+            wp["u_time"].value = float(self.time)
+            wp["u_sun_dir"].value = tuple(float(v) for v in SUN_DIR)
+            wp["u_sun_color"].value = (1.0, 0.86, 0.68)
+            wp["u_sun_intensity"].value = 3.2  # Azure Water default sunlight intensity
+            wp["u_deep_color"].value = (0.012, 0.075, 0.14)
+            wp["u_absorb"].value = (0.36, 0.10, 0.055)
+            wp["u_foam_threshold"].value = 0.625
+            wp["u_foam_amount"].value = float(WATER_SETTINGS["foam_amount"])
+            wp["u_detail_amp"].value = float(WATER_SETTINGS["detail_strength"])
+            wp["u_roughness"].value = float(WATER_SETTINGS["roughness"])
+            wp["u_refl_distort"].value = 0.0018
+            wp["u_refract_distort"].value = 0.008
+            wp["u_fog_k"].value = 0.0045
+            wp["u_fog_end"].value = 560.0
+            wind = np.array([0.78, 0.62], dtype=np.float32)
+            wind /= max(float(np.linalg.norm(wind)), 1e-6)
+            wp["u_wind_dir"].value = (float(wind[0]), float(wind[1]))
+            lambdas = np.array([64.0, 41.0, 26.0, 16.5, 10.5, 6.7, 4.3, 2.8], dtype=np.float32) * WATER_SETTINGS["wave_spacing"]
+            ks = 2.0 * math.pi / lambdas
+            amps = 0.22 * (lambdas / lambdas[0]) ** 0.85 * WATER_SETTINGS["wave_strength"]
+            amps[WATER_SETTINGS["wave_count"]:] = 0.0
+            angles = math.atan2(float(wind[0]), float(wind[1])) + np.radians(np.linspace(-26.0, 26.0, 8))
+            dirs = np.stack((np.sin(angles), np.cos(angles)), axis=1).astype(np.float32)
+            omegas = np.sqrt(9.81 * ks) * WATER_SETTINGS["wave_speed"]
+            qs = np.zeros_like(amps)
+            np.divide(0.85, ks * amps * 8.0, out=qs, where=amps > 1e-6)
+            qs = np.minimum(qs, 1.0)
+            wp["u_wave_dir"].write(dirs.tobytes())
+            wp["u_wave_k"].write(ks.astype(np.float32).tobytes())
+            wp["u_wave_amp"].write(amps.astype(np.float32).tobytes())
+            wp["u_wave_q"].write(qs.astype(np.float32).tobytes())
+            wp["u_wave_omega"].write(omegas.astype(np.float32).tobytes())
+            wp["u_amp_total"].value = float(amps.sum())
+
+            self.water_scene_tex.use(0)
+            self.water_scene_depth.use(1)
+            self.water_refl_tex.use(2)
+            wp["u_scene"].value = 0
+            wp["u_scene_depth"].value = 1
+            wp["u_refl"].value = 2
+            ctx.enable(moderngl.DEPTH_TEST)
+            ctx.disable(moderngl.BLEND)
+            ctx.depth_mask = False
+            ctx.disable(moderngl.CULL_FACE)
+            for mesh in water_surfaces:
+                key = id(mesh)
+                vao = self.azure_water_vaos.get(key)
+                if vao is None:
+                    vao = ctx.vertex_array(
+                        wp, [(mesh.vbo, "3f 12x 1f", "in_pos", "in_flex")],
+                        index_buffer=self.quad_ibo)
+                    self.azure_water_vaos[key] = vao
+                vao.render(moderngl.TRIANGLES, vertices=mesh.count)
+            ctx.depth_mask = True
+            ctx.enable(moderngl.CULL_FACE)
 
         if "u_anim_mode" in prog:
             prog["u_anim_mode"].value = 0
 
-        # Slow, blocky cloud layer high above the world.
-        if self.cloud_count:
-            self.cloud_tex.use(0)
-            ctx.enable(moderngl.BLEND)
-            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
-            ctx.depth_mask = False
-            ctx.disable(moderngl.CULL_FACE)
-            prog["u_alpha"].value = 0.66
-            prog["u_cutout"].value = 1
-            prog["u_fog_range"].value = (FOG_START + 26.0, FOG_END + 70.0)
-            prog["u_uv_offset"].value = (self.time * 0.0040 % 1.0,
-                                         self.time * 0.0012 % 1.0)
-            self.cloud_vao.render(moderngl.TRIANGLES)
-            prog["u_uv_offset"].value = (0.0, 0.0)
-            prog["u_alpha"].value = 1.0
-            prog["u_fog_range"].value = (FOG_START, FOG_END)
-            self.atlas_tex.use(0)
-            ctx.depth_mask = True
-            ctx.disable(moderngl.BLEND)
+        # Legacy blocky cloud geometry is intentionally not rendered; the
+        # Azure Water procedural sky shader supplies animated layered clouds.
 
         # Remote players (simple blocky avatars + screen-space name tags).
         self.remote_labels = []
@@ -4560,8 +4745,8 @@ def main() -> None:
         player = Player(world)
         if args.coast_test:
             # Seed-2026 shoreline test position: stand on the beach and face the sea.
-            player.pos[:] = (99.5, 34.0, 93.5)
-            player.yaw = -math.pi / 2.0
+            player.pos[:] = (98.5, 33.0, 93.5)
+            player.yaw = math.pi / 2.0
             player.pitch = -0.24
             player.fly = True
         game = Game(renderer, world, player)

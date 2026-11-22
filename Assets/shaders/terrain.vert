@@ -16,14 +16,14 @@ out float v_flex;
 out vec3 v_water_normal;
 out float v_water_crest;
 
-void gerstnerWater(vec2 xz, float t, out vec3 P, out vec3 N, out float height, out float crest) {
+void gerstnerWater(vec2 xz, float baseY, float t, out vec3 P, out vec3 N, out float height, out float crest) {
     const float PI2 = 6.28318530718;
     const float wavelengths[8] = float[8](14.0, 9.0, 6.0, 4.0, 2.8, 1.9, 1.25, 0.85);
-    const float amplitudes[8] = float[8](0.145, 0.105, 0.075, 0.050, 0.032, 0.020, 0.012, 0.007);
+    const float amplitudes[8] = float[8](0.160, 0.100, 0.065, 0.040, 0.025, 0.015, 0.009, 0.005);
     const float spreads[8] = float[8](-0.52, -0.36, -0.21, -0.07, 0.08, 0.23, 0.39, 0.55);
     vec2 wind = normalize(u_wind_dir);
     vec2 crossWind = vec2(-wind.y, wind.x);
-    P = vec3(xz.x, 0.0, xz.y);
+    P = vec3(xz.x, baseY, xz.y);
     vec3 tangent = vec3(1.0, 0.0, 0.0);
     vec3 binormal = vec3(0.0, 0.0, 1.0);
     height = 0.0;
@@ -92,7 +92,7 @@ void main() {
     if (u_anim_mode == 2) {
         vec3 waveP, waveN;
         float waveH, waveCrest;
-        gerstnerWater(in_pos.xz, u_time, waveP, waveN, waveH, waveCrest);
+        gerstnerWater(in_pos.xz, in_pos.y, u_time, waveP, waveN, waveH, waveCrest);
         float weight = clamp(in_flex, 0.0, 1.0);
         p = mix(in_pos, waveP, weight);
         v_water_normal = waveN;
