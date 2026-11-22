@@ -1106,11 +1106,17 @@ class World:
         water_src = IS_WATER[src]
         for di, (dx, dy, dz) in enumerate(DIRS):
             nb = region[1 + dx:17 + dx, 1 + dy:1 + yh + dy, 1 + dz:17 + dz]
+            # Opaque cubes can hide faces against an identical block.
+            # Alpha-cutout cubes (leaves) must KEEP faces between adjacent
+            # leaf blocks: their transparent texels reveal the next leaf
+            # layer behind them, exactly like Minecraft's leaf rendering.
             free = ~IS_OPAQUE[nb] & (nb != src)
-            for src_mask, parts in ((cube_src, cube_parts),
-                                    (cutout_src, cutout_parts),
-                                    (water_src, water_parts)):
-                mask = src_mask & free
+            cutout_free = ~IS_OPAQUE[nb]
+            for src_mask, parts, face_free in (
+                    (cube_src, cube_parts, free),
+                    (cutout_src, cutout_parts, cutout_free),
+                    (water_src, water_parts, free)):
+                mask = src_mask & face_free
                 pos = np.argwhere(mask)
                 n = pos.shape[0]
                 if n == 0:
