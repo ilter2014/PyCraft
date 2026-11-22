@@ -87,11 +87,12 @@ void main() {
 
     // Clouds on a virtual plane above the viewer.
     if (dir.y > 0.004) {
-        vec2 cp = dir.xz / dir.y * 1800.0 * u_cloud_scale + u_cloud_offset;
+        float cloud_height = max(dir.y, 0.085);
+        vec2 cp = dir.xz / cloud_height * 1800.0 * u_cloud_scale + u_cloud_offset;
         cp *= vec2(1.0, 1.35);
         float base = fbm(cp);
         float d = base - (1.0 - u_cloud_coverage);
-        float alpha = smoothstep(0.0, 0.30, d) * smoothstep(0.004, 0.07, dir.y);
+        float alpha = smoothstep(0.0, 0.30, d) * smoothstep(0.035, 0.19, dir.y);
         alpha *= 0.92;
 
         // Cheap self-shadowing: sample noise shifted along the sun.
@@ -99,8 +100,8 @@ void main() {
         float lit = fbm(cp + sdir * 0.55);
         float ld = clamp(0.5 + (lit - base) * 1.6, 0.0, 1.0);
 
-        vec3 shadow_col = u_haze * 0.20 + vec3(0.02, 0.03, 0.05);
-        vec3 lit_col = mix(u_sun_color, vec3(1.0, 0.85, 0.75), 0.20) * 0.55;
+        vec3 shadow_col = u_haze * 0.62 + vec3(0.10, 0.12, 0.15);
+        vec3 lit_col = mix(u_sun_color, vec3(1.0, 0.91, 0.82), 0.20) * 0.78;
         vec3 ccol = mix(shadow_col, lit_col, ld);
 
         // Silver lining near the sun.
@@ -110,35 +111,18 @@ void main() {
         col = mix(col, ccol, alpha);
     }
 
-    // Mountain silhouettes near the horizon.
-    float az = atan(dir.x, dir.z);
-    float azw = az;
-
-    float hl = 0.012 + 0.030 * (0.5 + 0.5 * fbm1(azw * 3.2, 47.0));
-    float aa = max(fwidth(dir.y), 1e-4);
-    float near_mask = 1.0 - smoothstep(hl - aa, hl + aa, dir.y);
-    if (near_mask > 0.001) {
-        float tt = clamp(dir.y / max(hl, 1e-4), 0.0, 1.0);
-        vec3 mcol = u_ridge_near * (0.35 + 0.65 * tt);
-        col = mix(col, mcol, near_mask);
-    }
-
-    float hf = 0.007 + 0.021 * (0.5 + 0.5 * fbm1(azw * 1.9 + 4.7, 11.0));
-    float far_mask = 1.0 - smoothstep(hf - aa, hf + aa, dir.y);
-    if (far_mask > 0.001) {
-        float tt = clamp(dir.y / max(hf, 1e-4), 0.0, 1.0);
-        vec3 mcol = u_ridge_far * (0.45 + 0.55 * tt);
-        col = mix(col, mcol, far_mask);
-    }
+    // Keep the horizon clean: the old procedural ridge masks produced dark,
+    // jagged cutouts against distant terrain. Atmospheric haze now blends the
+    // sky naturally into the world instead.
 
     // Below the horizon: mirror rays only; dark fallback, blended into the
     // horizon colour at the boundary so no hard line appears at the far
     // water's mirror-horizon row.
     if (dir.y < 0.0) {
-        vec3 below = mix(u_below, u_haze * 0.45, exp(-abs(dir.y) * 24.0));
-        // A broader angular transition prevents the reflected horizon from
-        // appearing as a razor-thin horizontal stripe across the ocean.
-        col = mix(below, u_horizon, exp(-abs(dir.y) * 72.0));
+        vec3 below = mix(u_haze * 0.72, u_horizon * 0.88, exp(-abs(dir.y) * 18.0));
+        // Smooth atmospheric continuation for reflected rays; avoid a black
+        // lower band at the horizon in the water reflection.
+        col = mix(below, u_horizon, exp(-abs(dir.y) * 42.0));
     }
 
     frag = vec4(col, 1.0);

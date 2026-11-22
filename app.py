@@ -3752,12 +3752,9 @@ class Renderer:
         p["u_zenith"].value = (0.135, 0.30, 0.72)
         p["u_horizon"].value = (0.70, 0.82, 0.96)
         p["u_haze"].value = (0.78, 0.86, 1.00)
-        p["u_below"].value = (0.04725, 0.105, 0.252)
         p["u_cloud_offset"].value = (float(self.time * 0.0016), float(self.time * 0.0010))
         p["u_cloud_coverage"].value = 0.48
         p["u_cloud_scale"].value = 0.00035
-        p["u_ridge_far"].value = (0.51, 0.57, 0.685)
-        p["u_ridge_near"].value = (0.305, 0.314, 0.402)
 
     def draw_world(self, game: "Game") -> None:
         ctx = self.ctx
