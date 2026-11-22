@@ -3182,7 +3182,7 @@ class Renderer:
         # Use Azure Water's original fragment shader directly from the research
         # project. Its vertex input is adapted only to PyCraft's world-space
         # block mesh and per-vertex shoreline fade attribute.
-        azure_shader_dir = ROOT / "_research" / "azure-water" / "water" / "shaders"
+        azure_shader_dir = ROOT / "Assets" / "shaders"
         azure_water_vs = (azure_shader_dir / "water.vert").read_text(encoding="utf-8")
         azure_water_fs = (azure_shader_dir / "water.frag").read_text(encoding="utf-8")
         azure_water_vs = azure_water_vs.replace(
