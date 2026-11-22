@@ -1,0 +1,13 @@
+language: "tr-TR"
+reviews:
+  profile: "assertive"
+  auto_review:
+    enabled: true
+    drafts: true
+    base_branches:
+      - ".*"
+  instructions: |
+    Her PR incelemesinin en sonunda özet olarak şu 3 başlığı mutlaka Türkçe ekle:
+    1. Bug ve Risk Analizi: Kritik hatalar, mantık açıkları veya yan etkiler var mı?
+    2. Kod Kalitesi Puanı: 10 üzerinden puan ver ve kısaca gerekçesini yaz.
+    3. Merge Uygunluğu: "Main'e alınmaya uygun" veya "Düzeltme gerekli" şeklinde net bir karar bildir.
