@@ -2767,11 +2767,12 @@ class Renderer:
         self.panorama_tex = None
         self.title_tex = None
         self.title_size = (1024, 256)
-        pano = load_png("gui/title/background/panorama_0.png")
+        pano = load_png("gui/title/background/pycraft_panorama.png")
         if pano is not None:
             self.panorama_tex = self._upload_texture(pano, repeat=False,
                                                      linear=True, mipmaps=True)
-        logo = load_png("gui/title/minecraft.png")
+        # PyCraft uses its own title treatment instead of the Minecraft logo.
+        logo = None
         if logo is not None:
             self.title_tex = self._upload_texture(logo, repeat=False,
                                                   linear=True, mipmaps=True)
@@ -3497,10 +3498,10 @@ class Renderer:
             self.text("PYCRAFT", w // 2, int(h * 0.13), scale=8,
                       align="center")
             logo_bottom = int(h * 0.13) + 66
-        self.text("PYTHON EDITION", w // 2, logo_bottom + 4, scale=2,
-                  color=col(255, 240, 80), align="center")
-        self.text("REAL MINECRAFT BLOCK TEXTURES", w // 2, logo_bottom + 32,
-                  scale=2, color=col(210, 220, 230), align="center")
+        self.text("A WORLD BUILT BLOCK BY BLOCK", w // 2, logo_bottom + 4,
+                  scale=2, color=col(190, 235, 205), align="center")
+        self.text("EXPLORE  -  BUILD  -  CREATE", w // 2, logo_bottom + 32,
+                  scale=2, color=col(225, 235, 225), align="center")
 
         bw = min(440, int(w * 0.38))
         bh = 52
