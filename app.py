@@ -1332,7 +1332,7 @@ class Player:
 
 def sanitize_name(name: str) -> str:
     clean = "".join(ch for ch in str(name) if ch.isprintable()).strip()
-    return (clean or "Player")[:16]
+    return clean[:16]
 
 
 def read_local_skin_b64() -> str:
@@ -1822,7 +1822,7 @@ class Game:
         self.inv_page = 0
 
         # Multiplayer.
-        self.name = sanitize_name(name or getpass.getuser())
+        self.name = sanitize_name(getpass.getuser() if name is None else name)
         self.net: NetSession | None = net
         self.remote_players: dict[str, RemotePlayer] = {}
         self.remote_labels: list[tuple[str, int, int]] = []
@@ -1924,7 +1924,7 @@ class Game:
 
     def host_game(self) -> None:
         if self.selected_host_world is None:
-            self.mp_status = "Select a saved world before hosting"
+            self.state = "host_world_select"
             return
         if not self.open_saved_world(self.selected_host_world):
             self.mp_status = self.world_status or "Could not open selected world"
@@ -2197,10 +2197,13 @@ class Game:
         self.save_world(silent=True)
         self.toast = f"Created {name}"
         self.toast_timer = 3.0
-        if self.create_for_host:
-            self.create_for_host = False
+        if self.create_return_state == "host_world_select":
             self.selected_host_world = path
-            self.host_game()
+            self.state = "host_world_select"
+            self.set_captured(False)
+            self.toast = "World created. Select it to host."
+            self.toast_timer = 4.0
+            return
 
     def open_saved_world(self, path: Path) -> bool:
         try:
@@ -2293,8 +2296,32 @@ class Game:
     # -- events -------------------------------------------------------------
 
     def handle_events(self) -> None:
+        # Windows may maximize the SDL window just after the OpenGL context is
+        # created. Its first resize notification is not always VIDEORESIZE, so
+        # synchronize the drawable size directly before processing each frame.
+        try:
+            width, height = pygame.display.get_window_size()
+            if width > 0 and height > 0 and (width, height) != (self.renderer.width, self.renderer.height):
+                self.renderer.width, self.renderer.height = width, height
+                self.renderer.ctx.viewport = (0, 0, width, height)
+        except pygame.error:
+            pass
+
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type in (pygame.VIDEORESIZE, getattr(pygame, "WINDOWSIZECHANGED", -1)):
+                # VIDEORESIZE carries the new client-area dimensions. The OpenGL
+                # display surface can still report its previous size at this point.
+                width = int(getattr(event, "w", 0) or 0)
+                height = int(getattr(event, "h", 0) or 0)
+                if width <= 0 or height <= 0:
+                    try:
+                        width, height = pygame.display.get_window_size()
+                    except pygame.error:
+                        width, height = 0, 0
+                if width > 0 and height > 0:
+                    self.renderer.width, self.renderer.height = width, height
+                    self.renderer.ctx.viewport = (0, 0, width, height)
+            elif event.type == pygame.QUIT:
                 self.save_world(silent=True)
                 self.running = False
             elif event.type == pygame.WINDOWFOCUSLOST and self.state == "playing":
@@ -2319,6 +2346,58 @@ class Game:
 
     def _key_down(self, event) -> None:
         k = event.key
+
+        if k == pygame.K_F11:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                user32 = ctypes.windll.user32
+                hwnd = pygame.display.get_wm_info().get("window")
+                if not hwnd:
+                    raise RuntimeError("Pencere tan?t?c?s? al?namad?")
+
+                GWL_STYLE = -16
+                WS_VISIBLE = 0x10000000
+                WS_POPUP = 0x80000000
+                SW_RESTORE = 9
+                SWP_NOOWNERZORDER = 0x0200
+                SWP_FRAMECHANGED = 0x0020
+                SWP_SHOWWINDOW = 0x0040
+
+                if not getattr(self, "fullscreen", False):
+                    rect = wintypes.RECT()
+                    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                        raise ctypes.WinError()
+                    self._windowed_rect = (rect.left, rect.top,
+                                           rect.right - rect.left,
+                                           rect.bottom - rect.top)
+                    self._windowed_style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    user32.SetWindowLongW(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE)
+                    width = user32.GetSystemMetrics(0)
+                    height = user32.GetSystemMetrics(1)
+                    user32.SetWindowPos(hwnd, 0, 0, 0, width, height,
+                                        SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
+                    self.fullscreen = True
+                else:
+                    style = getattr(self, "_windowed_style", None)
+                    rect = getattr(self, "_windowed_rect", None)
+                    if style is not None:
+                        user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                    if rect:
+                        user32.SetWindowPos(hwnd, 0, *rect,
+                                            SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
+                    self.fullscreen = False
+
+                pygame.event.pump()
+                width, height = pygame.display.get_window_size()
+                self.renderer.width, self.renderer.height = max(1, width), max(1, height)
+                self.renderer.ctx.viewport = (0, 0, self.renderer.width, self.renderer.height)
+            except Exception as exc:
+                self.toast = f"Tam ekran hatas?: {exc}"
+                self.toast_timer = 4.0
+            return
 
         # Chat input captures every key while it is open.
         if self.chat_open:
@@ -2392,7 +2471,7 @@ class Game:
         if self.state == "multiplayer":
             if self.mp_name_focus:
                 if k == pygame.K_BACKSPACE:
-                    self.name = self.name[:-1] or "Player"
+                    self.name = self.name[:-1]
                 elif k in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self.mp_name_focus = False
                 elif len(self.name) < 16:
@@ -2510,12 +2589,12 @@ class Game:
                 worlds = self.list_saved_worlds()
                 if 0 <= index < len(worlds):
                     self.selected_host_world = worlds[index]["path"]
-                    self.mp_status = "Selected world: " + worlds[index]["name"]
-                    self.state = "multiplayer"
+                    self.mp_status = ""
+                    self.host_game()
             elif hit == "host_world_back":
                 self.state = "multiplayer"
             elif hit == "host_world_create":
-                self.create_for_host = True
+                self.create_for_host = False
                 self.create_return_state = "host_world_select"
                 self.world_name_input = "My World"
                 self.world_seed_input = ""
@@ -2538,8 +2617,8 @@ class Game:
         if self.state == "multiplayer":
             hit = self.renderer.hit_hotspot(pos)
             if hit == "host":
+                self.mp_status = ""
                 self.state = "host_world_select"
-                self.mp_status = "Choose which saved world to host"
             elif hit == "join":
                 self.join_game()
             elif hit == "back":
@@ -3811,8 +3890,10 @@ class Renderer:
         by = 158
         visible = worlds[:6]
         if not visible:
-            self.text("No worlds yet. Create your first world!", w // 2, 250,
-                      scale=2, align="center", color=col(205, 215, 225))
+            self.text("No worlds yet", w // 2, 224,
+                      scale=3, align="center", color=col(205, 215, 225))
+            self.text("Create your first world below", w // 2, 258,
+                      scale=2, align="center", color=col(170, 190, 210))
         for i, item in enumerate(visible):
             yy = by + i * (bh + 10)
             delete_w = 104
@@ -3820,7 +3901,7 @@ class Renderer:
                              f"{item['name']}   |   SEED {item['seed']}", f"world:{i}")
             self.draw_button(bx + bw - delete_w, yy, delete_w, bh,
                              "DELETE", f"world_delete:{i}")
-        create_y = min(h - 118, by + max(1, len(visible)) * (bh + 10) + 12)
+        create_y = min(h - 118, (by + max(1, len(visible)) * (bh + 10) + 12) if visible else 300)
         self.draw_button(bx, create_y, bw, 50, "CREATE NEW WORLD", "create_world")
         self.draw_button(bx, create_y + 62, bw, 44, "BACK", "world_back")
         if game.world_status:
@@ -3852,14 +3933,10 @@ class Renderer:
         bw, bh = min(650, w - 100), 58
         bx, by = (w - bw) // 2, 170
         visible = worlds[:6]
-        if not visible:
-            self.text("No saved worlds. Create one first.", w // 2, 260,
-                      scale=2, align="center", color=col(220, 220, 220))
         for i, item in enumerate(visible):
             yy = by + i * (bh + 9)
-            marker = "  [SELECTED]" if game.selected_host_world == item["path"] else ""
             self.draw_button(bx, yy, bw, bh,
-                             f"{item['name']}   |   SEED {item['seed']}{marker}",
+                             f"{item['name']}   |   SEED {item['seed']}",
                              f"host_world:{i}")
         bottom = min(h - 112, by + max(1, len(visible)) * (bh + 9) + 12)
         self.draw_button(bx, bottom, bw, 44, "CREATE A WORLD", "host_world_create")
@@ -4331,15 +4408,27 @@ def create_window():
                                     pygame.GL_CONTEXT_PROFILE_CORE)
     pygame.display.gl_set_attribute(pygame.GL_DEPTH_SIZE, 24)
     pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
+    flags = pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE
     try:
-        pygame.display.set_mode((WINDOW_W, WINDOW_H),
-                                pygame.OPENGL | pygame.DOUBLEBUF, vsync=1)
+        pygame.display.set_mode((WINDOW_W, WINDOW_H), flags, vsync=1)
     except Exception:
-        pygame.display.set_mode((WINDOW_W, WINDOW_H),
-                                pygame.OPENGL | pygame.DOUBLEBUF)
+        pygame.display.set_mode((WINDOW_W, WINDOW_H), flags)
+
+    # Start maximized as a normal window (taskbar/title bar remain available).
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            hwnd = pygame.display.get_wm_info().get("window")
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+                pygame.event.pump()
+        except Exception:
+            pass
+
     ctx = moderngl.create_context()
     ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
-    fw, fh = ctx.screen.size
+    fw, fh = pygame.display.get_surface().get_size()
+    ctx.viewport = (0, 0, fw, fh)
     return ctx, fw, fh
 
 
