@@ -75,3 +75,8 @@ _find_open_shore.py
 _find_shore.py
 _record_preview.py
 _test_shore_counts.py
+
+# Local-only research and runtime caches
+/_research/
+/__pycache__/
+/AzureSkybox_HorizonFix.png
