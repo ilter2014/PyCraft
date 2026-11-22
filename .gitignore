@@ -66,3 +66,12 @@ Worlds/
 
 # Local source snapshots
 app_before_*.py
+
+
+# Temporary one-off development scripts
+_patch*.py
+_compare_frames.py
+_find_open_shore.py
+_find_shore.py
+_record_preview.py
+_test_shore_counts.py
