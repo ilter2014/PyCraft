@@ -1,4 +1,4 @@
-"""PyCraft - a small Minecraft-style voxel sandbox (optimized build).
+﻿"""PyCraft - a small Minecraft-style voxel sandbox (optimized build).
 
 A single-file Python game that loads the real Minecraft block textures from
 ``Assets/block`` and builds a first-person, editable voxel world with OpenGL.
@@ -611,6 +611,7 @@ IS_SOLID = np.array([b.solid for b in BLOCKS], dtype=bool)
 IS_CUBE = np.array([b.kind == "cube" for b in BLOCKS], dtype=bool)
 IS_PLANT = np.array([b.kind == "plant" for b in BLOCKS], dtype=bool)
 IS_WATER = np.array([b.kind == "water" for b in BLOCKS], dtype=bool)
+IS_LEAF = np.array(["leaves" in b.key for b in BLOCKS], dtype=bool)
 
 ATLAS_IMAGE, TILE_UVS = TEX.pack()
 PLACEABLE = [i for i in range(1, N_BLOCKS) if BLOCKS[i].kind in ("cube", "plant", "water")]
@@ -684,14 +685,84 @@ class GpuMesh:
 
 def _quads(pw: np.ndarray, quad: np.ndarray, tile_uv: np.ndarray,
            shade) -> np.ndarray:
-    """Build (n*4, 6) float32 vertices: xyz, uv, shade for n quads."""
+    """Build (n*4, 7) float32 vertices: xyz, uv, shade and local flex."""
     n = pw.shape[0]
-    out = np.empty((n, 4, 6), dtype=np.float32)
+    out = np.empty((n, 4, 7), dtype=np.float32)
     out[:, :, 0:3] = pw[:, None, :] + quad[None, :, :]
     out[:, :, 3] = tile_uv[:, [0, 2, 2, 0]]
     out[:, :, 4] = tile_uv[:, [1, 1, 3, 3]]
     out[:, :, 5] = shade
-    return out.reshape(-1, 6)
+    out[:, :, 6] = quad[None, :, 1]
+    return out.reshape(-1, 7)
+
+
+def _water_top_quads(pw: np.ndarray, tile_uv: np.ndarray, shade, segments: int = 6) -> np.ndarray:
+    """Subdivide each water top into a grid for real geometric wave motion."""
+    parts = []
+    n = len(pw)
+    if not n:
+        return np.zeros((0, 7), dtype=np.float32)
+    for iz in range(segments):
+        for ix in range(segments):
+            x0, x1 = ix / segments, (ix + 1) / segments
+            z0, z1 = iz / segments, (iz + 1) / segments
+            q = np.array([[x0, 1, z1], [x1, 1, z1], [x1, 1, z0], [x0, 1, z0]], dtype=np.float32)
+            verts = _quads(pw, q, tile_uv, shade).reshape(n, 4, 7)
+            uv0 = tile_uv[:, :2]; uv1 = tile_uv[:, 2:]
+            uv = np.stack((uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1,
+                           uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0), axis=1)
+            # Preserve a continuous atlas mapping across the subdivided surface.
+            verts[:, :, 3] = np.stack((uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0, uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1,
+                                       uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1, uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0), axis=1)
+            verts[:, :, 4] = np.stack((uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1,
+                                       uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0), axis=1)
+            parts.append(verts.reshape(-1, 7))
+    return np.concatenate(parts, axis=0)
+
+
+def _shore_wash_quads(sand_pos: np.ndarray, tile_uv: np.ndarray, shade,
+                      water_dx: int, water_dz: int, segments: int = 6) -> np.ndarray:
+    """Thin, subdivided swash sheet over the first sand block at the waterline.
+    flex stores normalized distance from the sea edge for the shore shader."""
+    if len(sand_pos) == 0:
+        return np.zeros((0, 7), dtype=np.float32)
+    parts = []
+    for i in range(segments):
+        d0, d1 = i / segments, (i + 1) / segments
+        verts = np.empty((len(sand_pos), 4, 7), dtype=np.float32)
+        x0 = np.zeros(len(sand_pos), dtype=np.float32)
+        x1 = np.ones(len(sand_pos), dtype=np.float32)
+        z0 = np.zeros(len(sand_pos), dtype=np.float32)
+        z1 = np.ones(len(sand_pos), dtype=np.float32)
+        if water_dx:
+            edge = 0.0 if water_dx < 0 else 1.0
+            inward = -float(water_dx)
+            x0[:] = edge + inward * d0
+            x1[:] = edge + inward * d1
+        else:
+            edge = 0.0 if water_dz < 0 else 1.0
+            inward = -float(water_dz)
+            z0[:] = edge + inward * d0
+            z1[:] = edge + inward * d1
+        # Upward-facing top quad winding.
+        coords = np.stack((
+            np.stack((x0, np.ones_like(x0), z1), axis=1),
+            np.stack((x1, np.ones_like(x1), z1), axis=1),
+            np.stack((x1, np.ones_like(x1), z0), axis=1),
+            np.stack((x0, np.ones_like(x0), z0), axis=1),
+        ), axis=1)
+        coords[:, :, 1] += 0.012
+        verts[:, :, :3] = sand_pos[:, None, :] + coords
+        uv0, uv1 = tile_uv[:, :2], tile_uv[:, 2:]
+        verts[:, :, 3] = np.stack((uv0[:, 0], uv1[:, 0], uv1[:, 0], uv0[:, 0]), axis=1)
+        verts[:, :, 4] = np.stack((uv1[:, 1], uv1[:, 1], uv0[:, 1], uv0[:, 1]), axis=1)
+        verts[:, :, 5] = shade
+        if water_dx:
+            verts[:, :, 6] = np.array([d0, d1, d1, d0], dtype=np.float32)[None, :]
+        else:
+            verts[:, :, 6] = np.array([d1, d1, d0, d0], dtype=np.float32)[None, :]
+        parts.append(verts.reshape(-1, 7))
+    return np.concatenate(parts, axis=0)
 
 
 class World:
@@ -1098,15 +1169,17 @@ class World:
         region = self._region(cx, cz, yh)
         src = region[1:17, 1:1 + yh, 1:17]
         ox, oz = cx * CHUNK, cz * CHUNK
-        cube_parts, water_parts, plant_parts = [], [], []
+        cube_parts, foliage_parts, water_parts, plant_parts, falling_leaf_parts, shore_parts = [], [], [], [], [], []
         face_total = 0
 
-        cube_src = IS_CUBE[src]
+        cube_src = IS_CUBE[src] & ~IS_LEAF[src]
+        foliage_src = IS_LEAF[src]
         water_src = IS_WATER[src]
         for di, (dx, dy, dz) in enumerate(DIRS):
             nb = region[1 + dx:17 + dx, 1 + dy:1 + yh + dy, 1 + dz:17 + dz]
             free = ~IS_OPAQUE[nb] & (nb != src)
-            for src_mask, parts in ((cube_src, cube_parts), (water_src, water_parts)):
+            for src_mask, parts in ((cube_src, cube_parts), (foliage_src, foliage_parts),
+                                    (water_src, water_parts)):
                 mask = src_mask & free
                 pos = np.argwhere(mask)
                 n = pos.shape[0]
@@ -1116,9 +1189,28 @@ class World:
                 pw[:, 0] += ox
                 pw[:, 2] += oz
                 tiles = FACE_TILE[di][src[mask]]
-                parts.append(_quads(pw, CORNERS[di], TILE_UVS[tiles],
-                                    FACE_SHADE[di]))
-                face_total += n
+                if src_mask is water_src and di == 3:
+                    parts.append(_water_top_quads(pw, TILE_UVS[tiles], FACE_SHADE[di], segments=6))
+                    face_total += n * 36
+                else:
+                    parts.append(_quads(pw, CORNERS[di], TILE_UVS[tiles], FACE_SHADE[di]))
+                    face_total += n
+
+        # Sparse individual leaflets detach from the canopy and drift down.
+        leaf_pos = np.argwhere(foliage_src)
+        if leaf_pos.size:
+            code = (leaf_pos[:, 0] * 73856093 + leaf_pos[:, 1] * 19349663 + leaf_pos[:, 2] * 83492791) % 127
+            chosen = leaf_pos[code == 0]
+            if len(chosen):
+                fp = chosen.astype(np.float32)
+                fp[:, 0] += ox; fp[:, 2] += oz
+                fuv = TILE_UVS[FACE_TILE[1][src[chosen[:, 0], chosen[:, 1], chosen[:, 2]]]]
+                leaflet = np.array([[0.30, 0.48, 0.50], [0.50, 0.48, 0.32],
+                                    [0.70, 0.48, 0.50], [0.50, 0.48, 0.68]], dtype=np.float32)
+                fv = _quads(fp, leaflet, fuv, 0.95)
+                phases = ((chosen[:, 0] * 0.173 + chosen[:, 1] * 0.317 + chosen[:, 2] * 0.119) % 1.0).astype(np.float32)
+                fv[:, 6] = np.repeat(phases, 4)
+                falling_leaf_parts.append(fv)
 
         plant_mask = IS_PLANT[src]
         plant_pos = np.argwhere(plant_mask)
@@ -1137,8 +1229,10 @@ class World:
                 return np.zeros((0, 6), dtype=np.float32)
             return parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
 
-        return ({"cube": cat(cube_parts), "water": cat(water_parts),
-                 "plant": cat(plant_parts)}, face_total, ymax)
+        return ({"cube": cat(cube_parts), "foliage": cat(foliage_parts),
+                 "water": cat(water_parts), "plant": cat(plant_parts),
+                 "leaf_fall": cat(falling_leaf_parts), "shore": cat(shore_parts)},
+                face_total, ymax)
 
     def upload_chunk(self, renderer, cx: int, cz: int, precomputed=None) -> None:
         old = self.meshes.pop((cx, cz), None)
@@ -1813,6 +1907,8 @@ class Game:
         self.toast = ""
         self.toast_timer = 0.0
         self.auto_screenshot = None
+        self.auto_record = None
+        self.record_seconds = 10
         self.auto_scene = scene
         self.frame_count = 0
         self.last_time = time.perf_counter()
@@ -2703,6 +2799,28 @@ class Game:
         pygame.display.flip()
 
     def run(self) -> None:
+        if self.auto_record:
+            scene = {"world": "playing", "pause": "paused"}.get(
+                self.auto_scene, self.auto_scene)
+            self.state = scene
+            self.set_captured(False)
+            self.toast_timer = 0.0
+            frame_dir = Path(self.auto_record)
+            frame_dir.mkdir(parents=True, exist_ok=True)
+            fps = 30
+            total = max(1, int(self.record_seconds * fps))
+            frame_step = 1.0 / fps
+            for i in range(total):
+                frame_start = time.perf_counter()
+                self.renderer.draw(self)
+                self.renderer.save_screenshot(str(frame_dir / f"frame_{i:05d}.png"))
+                pygame.display.flip()
+                pygame.event.pump()
+                time.sleep(max(0.0, frame_step - (time.perf_counter() - frame_start)))
+            print(f"recorded {total} frames to {frame_dir}")
+            self.running = False
+            return
+
         if self.auto_screenshot:
             scene = {"world": "playing", "pause": "paused"}.get(
                 self.auto_scene, self.auto_scene)
@@ -3000,10 +3118,21 @@ class Renderer:
         self.height = height
         self.window = pygame.display.get_surface()
 
-        self.terrain_prog = ctx.program(vertex_shader=TERRAIN_VS,
-                                        fragment_shader=TERRAIN_FS)
-        self.sky_prog = ctx.program(vertex_shader=SKY_VS,
-                                    fragment_shader=SKY_FS)
+        # Shader files are editable independently; embedded GLSL remains a safe fallback.
+        shader_dir = ASSET_DIR / "shaders"
+        def shader_source(filename: str, fallback: str) -> str:
+            path = shader_dir / filename
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError:
+                return fallback
+
+        self.terrain_prog = ctx.program(
+            vertex_shader=shader_source("terrain.vert", TERRAIN_VS),
+            fragment_shader=shader_source("terrain.frag", TERRAIN_FS))
+        self.sky_prog = ctx.program(
+            vertex_shader=shader_source("sky.vert", SKY_VS),
+            fragment_shader=shader_source("sky.frag", SKY_FS))
         self.line_prog = ctx.program(vertex_shader=LINE_VS,
                                      fragment_shader=LINE_FS)
         self.ui_prog = ctx.program(vertex_shader=UI_VS,
@@ -3217,7 +3346,7 @@ class Renderer:
         vbo = self.ctx.buffer(np.ascontiguousarray(verts, dtype="f4").tobytes())
         vao = self.ctx.vertex_array(
             self.terrain_prog,
-            [(vbo, "3f 2f 1f", "in_pos", "in_uv", "in_shade")],
+            [(vbo, "3f 2f 1f 1f", "in_pos", "in_uv", "in_shade", "in_flex")],
             index_buffer=self.quad_ibo)
         return GpuMesh(vao, vbo, quads * 6)
 
@@ -3560,6 +3689,9 @@ class Renderer:
         prog = self.terrain_prog
         prog["u_vp"].write(vp_bytes)
         prog["u_cam"].value = tuple(float(v) for v in cam)
+        prog["u_sun_dir"].value = tuple(float(v) for v in SUN_DIR)
+        prog["u_wind_dir"].value = (0.78, 0.62)
+        prog["u_time"].value = float(self.time)
         if player.underwater:
             prog["u_fog"].value = (0.045, 0.16, 0.28)
             prog["u_fog_range"].value = (3.0, 34.0)
@@ -3576,12 +3708,38 @@ class Renderer:
         visible = self.visible_chunks(world, vp, cam)   # nearest first
         game.drawn_chunks = len(visible)
 
-        # Opaque cubes, front to back (best early-Z rejection).
+        # Opaque terrain, front to back (best early-Z rejection).
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 0
         for layers in visible:
             mesh = layers.get("cube")
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
+        # Leaf canopy and small plants move gently with the wind.
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 1
+        for layers in visible:
+            mesh = layers.get("foliage")
+            if mesh:
+                mesh.vao.render(tri, vertices=mesh.count)
+        # Individual leaflets detach and flutter down independently.
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 3
+        ctx.enable(moderngl.BLEND)
+        ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
+        ctx.depth_mask = False
+        # Falling leaves are a near-field detail: avoid transparent particle
+        # batches and vertex animation on distant chunks.
+        for layers in visible[:6]:
+            mesh = layers.get("leaf_fall")
+            if mesh:
+                mesh.vao.render(tri, vertices=mesh.count)
+        ctx.depth_mask = True
+        ctx.disable(moderngl.BLEND)
+        # Flowers, grass and thin stems flex from their rooted bases.
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 1
         # Cutout plants (two crossed quads, no back-face culling).
         ctx.disable(moderngl.CULL_FACE)
         for layers in visible:
@@ -3589,7 +3747,9 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Translucent water, back to front.
+        # Translucent water, back to front, with animated surface waves.
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 2
         water = [layers["water"] for layers in reversed(visible)
                  if "water" in layers]
         if water:
@@ -3604,6 +3764,9 @@ class Renderer:
             ctx.depth_mask = True
             ctx.disable(moderngl.BLEND)
             prog["u_cutout"].value = 1
+
+        if "u_anim_mode" in prog:
+            prog["u_anim_mode"].value = 0
 
         # Slow, blocky cloud layer high above the world.
         if self.cloud_count:
@@ -4349,10 +4512,15 @@ def main() -> None:
                         help="validate assets, world generation, meshing and physics")
     parser.add_argument("--screenshot", metavar="FILE", default=None,
                         help="render a screenshot and exit")
+    parser.add_argument("--record", metavar="FRAME_DIR", default=None,
+                        help="render a short world video as numbered PNG frames")
+    parser.add_argument("--record-seconds", type=int, default=10,
+                        help="duration for --record (default: 10 seconds)")
     parser.add_argument("--scene", default="world",
                         choices=["world", "menu", "pause", "inventory"],
                         help="scene to use with --screenshot")
     parser.add_argument("--seed", type=int, default=2026, help="world seed")
+    parser.add_argument("--coast-test", action="store_true", help="aim the test camera at the nearest beach")
     args = parser.parse_args()
 
     if args.selftest:
@@ -4390,9 +4558,19 @@ def main() -> None:
         renderer.draw_loading(1.0, "READY")
 
         player = Player(world)
+        if args.coast_test:
+            # Seed-2026 shoreline test position: stand on the beach and face the sea.
+            player.pos[:] = (99.5, 34.0, 93.5)
+            player.yaw = -math.pi / 2.0
+            player.pitch = -0.24
+            player.fly = True
         game = Game(renderer, world, player)
         if args.screenshot:
             game.auto_screenshot = args.screenshot
+            game.auto_scene = args.scene
+        if args.record:
+            game.auto_record = args.record
+            game.record_seconds = max(2, min(args.record_seconds, 30))
             game.auto_scene = args.scene
         game.run()
     finally:
