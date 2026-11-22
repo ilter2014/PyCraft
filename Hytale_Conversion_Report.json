@@ -1,0 +1,1411 @@
+{
+  "stage": "2 semantic expansion",
+  "backup": "C:\\Users\\İlter\\Desktop\\PyCraft\\Hytale_Conversion_Backup_Stage2",
+  "block_textures_replaced": 207,
+  "item_textures_replaced": 43,
+  "block_misses": [
+    [
+      "obsidian",
+      "Rock_Obsidian"
+    ],
+    [
+      "calcite",
+      "Rock_White"
+    ],
+    [
+      "end_stone",
+      "Rock_White"
+    ],
+    [
+      "end_stone_bricks",
+      "Rock_White_Brick"
+    ],
+    [
+      "magma",
+      "Rock_Magma"
+    ],
+    [
+      "moss_block",
+      "Soil_Moss"
+    ],
+    [
+      "mycelium_top",
+      "Soil_Mushroom"
+    ],
+    [
+      "mycelium_side",
+      "Soil_Mushroom_Side"
+    ],
+    [
+      "hay_block_side",
+      "Plant_Straw"
+    ],
+    [
+      "hay_block_top",
+      "Plant_Straw"
+    ],
+    [
+      "cactus_side",
+      "Plant_Cactus"
+    ],
+    [
+      "cactus_top",
+      "Plant_Cactus"
+    ],
+    [
+      "cactus_bottom",
+      "Plant_Cactus"
+    ],
+    [
+      "pumpkin_side",
+      "Plant_Pumpkin"
+    ],
+    [
+      "pumpkin_top",
+      "Plant_Pumpkin"
+    ],
+    [
+      "melon_side",
+      "Plant_Melon"
+    ],
+    [
+      "melon_top",
+      "Plant_Melon"
+    ],
+    [
+      "glass",
+      "Glass_Clear"
+    ],
+    [
+      "glass_pane_top",
+      "Glass_Clear"
+    ],
+    [
+      "glowstone",
+      "Rock_Crystal"
+    ],
+    [
+      "sponge",
+      "Plant_Sponge"
+    ],
+    [
+      "wet_sponge",
+      "Plant_Sponge"
+    ],
+    [
+      "coal_ore",
+      "Ore_Coal_Stone"
+    ],
+    [
+      "deepslate_coal_ore",
+      "Ore_Coal_Slate"
+    ],
+    [
+      "deepslate_gold_ore",
+      "Ore_Gold_Slate"
+    ],
+    [
+      "coal_block",
+      "Ore_Coal_Stone"
+    ],
+    [
+      "amethyst_block",
+      "Rock_Crystal"
+    ],
+    [
+      "cherry_planks",
+      "Wood_Pinkwood_Planks"
+    ],
+    [
+      "glow_lichen",
+      "Plant_Glow_Moss"
+    ],
+    [
+      "bush",
+      "Plant_Bush"
+    ],
+    [
+      "dandelion",
+      "Plant_Flower_Yellow"
+    ],
+    [
+      "poppy",
+      "Plant_Flower_Red"
+    ],
+    [
+      "allium",
+      "Plant_Flower_Purple"
+    ],
+    [
+      "azure_bluet",
+      "Plant_Flower_White"
+    ],
+    [
+      "cornflower",
+      "Plant_Flower_Blue"
+    ],
+    [
+      "lily_of_the_valley",
+      "Plant_Flower_White"
+    ],
+    [
+      "oxeye_daisy",
+      "Plant_Flower_White"
+    ],
+    [
+      "sunflower_bottom",
+      "Plant_Flower_Sunflower"
+    ],
+    [
+      "sunflower_top",
+      "Plant_Flower_Sunflower"
+    ],
+    [
+      "lilac_bottom",
+      "Plant_Flower_Purple"
+    ],
+    [
+      "lilac_top",
+      "Plant_Flower_Purple"
+    ],
+    [
+      "peony_bottom",
+      "Plant_Flower_Pink"
+    ],
+    [
+      "peony_top",
+      "Plant_Flower_Pink"
+    ],
+    [
+      "rose_bush_bottom",
+      "Plant_Flower_Red"
+    ],
+    [
+      "rose_bush_top",
+      "Plant_Flower_Red"
+    ],
+    [
+      "pink_petals",
+      "Plant_Flower_Pink"
+    ],
+    [
+      "spore_blossom",
+      "Plant_Flower_Pink"
+    ],
+    [
+      "cobweb",
+      "Plant_Web"
+    ],
+    [
+      "sugar_cane",
+      "Plant_Reed"
+    ],
+    [
+      "cocoa_stage0",
+      "Plant_Cocoa"
+    ],
+    [
+      "cocoa_stage1",
+      "Plant_Cocoa"
+    ],
+    [
+      "cocoa_stage2",
+      "Plant_Cocoa"
+    ],
+    [
+      "beetroots_stage0",
+      "Plant_Crop_Beetroot"
+    ],
+    [
+      "beetroots_stage1",
+      "Plant_Crop_Beetroot"
+    ],
+    [
+      "beetroots_stage2",
+      "Plant_Crop_Beetroot"
+    ],
+    [
+      "beetroots_stage3",
+      "Plant_Crop_Beetroot"
+    ],
+    [
+      "brown_wool",
+      "Cloth_Brown"
+    ],
+    [
+      "lime_wool",
+      "Cloth_Lime"
+    ],
+    [
+      "magenta_wool",
+      "Cloth_Magenta"
+    ]
+  ],
+  "item_misses": [
+    [
+      "beetroot",
+      "Plant_Crop_Beetroot"
+    ],
+    [
+      "melon_slice",
+      "Plant_Fruit_Melon"
+    ],
+    [
+      "cookie",
+      "Food_Biscuit"
+    ],
+    [
+      "cake",
+      "Food_Cake"
+    ],
+    [
+      "coal",
+      "Ingredient_Coal"
+    ],
+    [
+      "charcoal",
+      "Ingredient_Coal"
+    ],
+    [
+      "wooden_hoe",
+      "Tool_Hoe_Wood"
+    ],
+    [
+      "diamond_hoe",
+      "Tool_Hoe_Cobalt"
+    ],
+    [
+      "lava_bucket",
+      "Container_Bucket_Lava"
+    ],
+    [
+      "arrow",
+      "Weapon_Arrow"
+    ],
+    [
+      "flint",
+      "Ingredient_Flint"
+    ],
+    [
+      "flint_and_steel",
+      "Tool_Firestarter"
+    ],
+    [
+      "string",
+      "Ingredient_Fiber"
+    ],
+    [
+      "feather",
+      "Ingredient_Feather"
+    ],
+    [
+      "bone",
+      "Ingredient_Bone"
+    ],
+    [
+      "bone_meal",
+      "Ingredient_Bone_Meal"
+    ],
+    [
+      "leather",
+      "Ingredient_Leather"
+    ],
+    [
+      "paper",
+      "Ingredient_Paper"
+    ],
+    [
+      "book",
+      "Ingredient_Book"
+    ],
+    [
+      "ender_pearl",
+      "Ingredient_Crystal"
+    ],
+    [
+      "blaze_rod",
+      "Ingredient_Rod_Fire"
+    ],
+    [
+      "gunpowder",
+      "Ingredient_Powder"
+    ],
+    [
+      "slime_ball",
+      "Ingredient_Slime"
+    ],
+    [
+      "cooked_beef",
+      "Food_Cooked_Beef"
+    ],
+    [
+      "beef",
+      "Food_Raw_Beef"
+    ],
+    [
+      "cooked_chicken",
+      "Food_Cooked_Chicken"
+    ],
+    [
+      "chicken",
+      "Food_Raw_Chicken"
+    ],
+    [
+      "cooked_porkchop",
+      "Food_Cooked_Pork"
+    ],
+    [
+      "porkchop",
+      "Food_Raw_Pork"
+    ],
+    [
+      "cooked_mutton",
+      "Food_Cooked_Mutton"
+    ],
+    [
+      "mutton",
+      "Food_Raw_Mutton"
+    ],
+    [
+      "cooked_cod",
+      "Food_Cooked_Fish"
+    ],
+    [
+      "cod",
+      "Food_Raw_Fish"
+    ],
+    [
+      "cooked_salmon",
+      "Food_Cooked_Fish"
+    ],
+    [
+      "salmon",
+      "Food_Raw_Fish"
+    ],
+    [
+      "baked_potato",
+      "Food_Baked_Potato"
+    ],
+    [
+      "carrot_on_a_stick",
+      "Tool_Fishing_Rod"
+    ],
+    [
+      "fishing_rod",
+      "Tool_Fishing_Rod"
+    ],
+    [
+      "compass_00",
+      "Tool_Compass"
+    ],
+    [
+      "clock_00",
+      "Tool_Clock"
+    ]
+  ],
+  "block_matches": [
+    {
+      "minecraft": "grass_block_top",
+      "hytale": "Common/BlockTextures/Soil_Grass_Deep.png"
+    },
+    {
+      "minecraft": "grass_block_side",
+      "hytale": "Common/BlockTextures/Soil_Grass_Deep_Side.png"
+    },
+    {
+      "minecraft": "grass_block_side_overlay",
+      "hytale": "Common/BlockTextures/Soil_Grass_Deep_Side.png"
+    },
+    {
+      "minecraft": "grass_block_snow",
+      "hytale": "Common/BlockTextures/Soil_Grass_Cold_Top.png"
+    },
+    {
+      "minecraft": "dirt",
+      "hytale": "Common/BlockTextures/Soil_Dirt.png"
+    },
+    {
+      "minecraft": "coarse_dirt",
+      "hytale": "Common/BlockTextures/Soil_Dirt.png"
+    },
+    {
+      "minecraft": "rooted_dirt",
+      "hytale": "Common/BlockTextures/Soil_Dirt.png"
+    },
+    {
+      "minecraft": "mud",
+      "hytale": "Common/BlockTextures/Soil_Mud.png"
+    },
+    {
+      "minecraft": "clay",
+      "hytale": "Common/BlockTextures/Soil_Clay.png"
+    },
+    {
+      "minecraft": "sand",
+      "hytale": "Common/BlockTextures/Soil_Sand.png"
+    },
+    {
+      "minecraft": "red_sand",
+      "hytale": "Common/BlockTextures/Soil_Sand_Red.png"
+    },
+    {
+      "minecraft": "gravel",
+      "hytale": "Common/BlockTextures/Soil_Gravel.png"
+    },
+    {
+      "minecraft": "snow",
+      "hytale": "Common/BlockTextures/Soil_Snow.png"
+    },
+    {
+      "minecraft": "powder_snow",
+      "hytale": "Common/BlockTextures/Soil_Snow.png"
+    },
+    {
+      "minecraft": "ice",
+      "hytale": "Common/BlockTextures/Rock_Ice.png"
+    },
+    {
+      "minecraft": "packed_ice",
+      "hytale": "Common/BlockTextures/Rock_Ice.png"
+    },
+    {
+      "minecraft": "blue_ice",
+      "hytale": "Common/BlockTextures/Rock_Ice.png"
+    },
+    {
+      "minecraft": "water_still",
+      "hytale": "Common/BlockTextures/Fluid_Water.png"
+    },
+    {
+      "minecraft": "water_flow",
+      "hytale": "Common/BlockTextures/Fluid_Water.png"
+    },
+    {
+      "minecraft": "water_overlay",
+      "hytale": "Common/BlockTextures/Fluid_Water.png"
+    },
+    {
+      "minecraft": "lava_still",
+      "hytale": "Common/BlockTextures/Fluid_Lava.png"
+    },
+    {
+      "minecraft": "lava_flow",
+      "hytale": "Common/BlockTextures/Fluid_Lava.png"
+    },
+    {
+      "minecraft": "bedrock",
+      "hytale": "Common/BlockTextures/Rock_Bedrock.png"
+    },
+    {
+      "minecraft": "stone",
+      "hytale": "Common/BlockTextures/Rock_Stone.png"
+    },
+    {
+      "minecraft": "cobblestone",
+      "hytale": "Common/Icons/ItemsGenerated/Rock_Stone_Cobble.png"
+    },
+    {
+      "minecraft": "mossy_cobblestone",
+      "hytale": "Common/BlockTextures/Rock_Stone_Cobble_Mossy.png"
+    },
+    {
+      "minecraft": "stone_bricks",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick.png"
+    },
+    {
+      "minecraft": "cracked_stone_bricks",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick.png"
+    },
+    {
+      "minecraft": "mossy_stone_bricks",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick_Mossy.png"
+    },
+    {
+      "minecraft": "chiseled_stone_bricks",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick_Decorative.png"
+    },
+    {
+      "minecraft": "smooth_stone",
+      "hytale": "Common/BlockTextures/Rock_Stone.png"
+    },
+    {
+      "minecraft": "andesite",
+      "hytale": "Common/BlockTextures/Rock_Stone.png"
+    },
+    {
+      "minecraft": "polished_andesite",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick.png"
+    },
+    {
+      "minecraft": "diorite",
+      "hytale": "Common/Icons/ItemsGenerated/Rock_Chalk.png"
+    },
+    {
+      "minecraft": "polished_diorite",
+      "hytale": "Common/Icons/ItemsGenerated/Rock_Chalk.png"
+    },
+    {
+      "minecraft": "granite",
+      "hytale": "Common/BlockTextures/Rock_Limestone.png"
+    },
+    {
+      "minecraft": "polished_granite",
+      "hytale": "Common/BlockTextures/Rock_Limestone.png"
+    },
+    {
+      "minecraft": "deepslate",
+      "hytale": "Common/BlockTextures/Rock_Slate.png"
+    },
+    {
+      "minecraft": "cobbled_deepslate",
+      "hytale": "Common/BlockTextures/Rock_Slate_Cobble.png"
+    },
+    {
+      "minecraft": "polished_deepslate",
+      "hytale": "Common/BlockTextures/Rock_Slate.png"
+    },
+    {
+      "minecraft": "deepslate_bricks",
+      "hytale": "Common/Icons/ItemsGenerated/Rock_Slate_Brick.png"
+    },
+    {
+      "minecraft": "deepslate_tiles",
+      "hytale": "Common/Icons/ItemsGenerated/Rock_Slate_Brick.png"
+    },
+    {
+      "minecraft": "tuff",
+      "hytale": "Common/BlockTextures/Rock_Volcanic.png"
+    },
+    {
+      "minecraft": "dripstone_block",
+      "hytale": "Common/BlockTextures/Rock_Limestone.png"
+    },
+    {
+      "minecraft": "sandstone",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Side.png"
+    },
+    {
+      "minecraft": "sandstone_top",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Top.png"
+    },
+    {
+      "minecraft": "sandstone_bottom",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Top.png"
+    },
+    {
+      "minecraft": "cut_sandstone",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Side.png"
+    },
+    {
+      "minecraft": "chiseled_sandstone",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Decorative.png"
+    },
+    {
+      "minecraft": "red_sandstone",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Red.png"
+    },
+    {
+      "minecraft": "red_sandstone_top",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Red.png"
+    },
+    {
+      "minecraft": "red_sandstone_bottom",
+      "hytale": "Common/BlockTextures/Rock_Sandstone_Red.png"
+    },
+    {
+      "minecraft": "netherrack",
+      "hytale": "Common/BlockTextures/Rock_Volcanic.png"
+    },
+    {
+      "minecraft": "nether_bricks",
+      "hytale": "Common/BlockTextures/Rock_Volcanic_Brick.png"
+    },
+    {
+      "minecraft": "blackstone",
+      "hytale": "Common/BlockTextures/Rock_Basalt.png"
+    },
+    {
+      "minecraft": "blackstone_top",
+      "hytale": "Common/BlockTextures/Rock_Basalt.png"
+    },
+    {
+      "minecraft": "basalt_side",
+      "hytale": "Common/BlockTextures/Rock_Basalt.png"
+    },
+    {
+      "minecraft": "basalt_top",
+      "hytale": "Common/BlockTextures/Rock_Basalt.png"
+    },
+    {
+      "minecraft": "bricks",
+      "hytale": "Common/BlockTextures/Rock_Stone_Brick.png"
+    },
+    {
+      "minecraft": "podzol_top",
+      "hytale": "Common/BlockTextures/Soil_Dirt.png"
+    },
+    {
+      "minecraft": "podzol_side",
+      "hytale": "Common/BlockTextures/Soil_Dirt.png"
+    },
+    {
+      "minecraft": "farmland",
+      "hytale": "Common/BlockTextures/Soil_Dirt_Tilled.png"
+    },
+    {
+      "minecraft": "farmland_moist",
+      "hytale": "Common/BlockTextures/Soil_Dirt_Tilled_Watered.png"
+    },
+    {
+      "minecraft": "bookshelf",
+      "hytale": "Common/BlockTextures/Wood_Softwood_Planks_02.png"
+    },
+    {
+      "minecraft": "iron_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Iron_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_iron_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Iron_Slate.png"
+    },
+    {
+      "minecraft": "gold_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Gold_Stone.png"
+    },
+    {
+      "minecraft": "copper_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_copper_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Shale.png"
+    },
+    {
+      "minecraft": "diamond_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Cobalt_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_diamond_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Cobalt_Shale.png"
+    },
+    {
+      "minecraft": "emerald_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Adamantite_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_emerald_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Adamantite_Shale.png"
+    },
+    {
+      "minecraft": "lapis_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Silver_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_lapis_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Silver_Shale.png"
+    },
+    {
+      "minecraft": "redstone_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Stone.png"
+    },
+    {
+      "minecraft": "deepslate_redstone_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Shale.png"
+    },
+    {
+      "minecraft": "nether_gold_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Gold_Volcanic.png"
+    },
+    {
+      "minecraft": "nether_quartz_ore",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Silver_Volcanic.png"
+    },
+    {
+      "minecraft": "iron_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Iron.png"
+    },
+    {
+      "minecraft": "gold_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Gold.png"
+    },
+    {
+      "minecraft": "copper_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Copper.png"
+    },
+    {
+      "minecraft": "diamond_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Cobalt_Stone.png"
+    },
+    {
+      "minecraft": "emerald_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Adamantite_Stone.png"
+    },
+    {
+      "minecraft": "lapis_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Silver_Stone.png"
+    },
+    {
+      "minecraft": "redstone_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Stone.png"
+    },
+    {
+      "minecraft": "raw_iron_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Iron_Stone.png"
+    },
+    {
+      "minecraft": "raw_gold_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Gold_Stone.png"
+    },
+    {
+      "minecraft": "raw_copper_block",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper_Stone.png"
+    },
+    {
+      "minecraft": "ancient_debris_side",
+      "hytale": "Common/BlockTextures/Rock_Volcanic.png"
+    },
+    {
+      "minecraft": "ancient_debris_top",
+      "hytale": "Common/BlockTextures/Rock_Volcanic.png"
+    },
+    {
+      "minecraft": "oak_planks",
+      "hytale": "Common/BlockTextures/Wood_Softwood_Planks_02.png"
+    },
+    {
+      "minecraft": "oak_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Oak_Side.png"
+    },
+    {
+      "minecraft": "oak_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Oak_Top.png"
+    },
+    {
+      "minecraft": "stripped_oak_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Oak_Side.png"
+    },
+    {
+      "minecraft": "stripped_oak_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Oak_Top.png"
+    },
+    {
+      "minecraft": "oak_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Oak_Leaves.png"
+    },
+    {
+      "minecraft": "oak_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Sapling_Oak.png"
+    },
+    {
+      "minecraft": "birch_planks",
+      "hytale": "Common/BlockTextures/Wood_Hardwood_Planks.png"
+    },
+    {
+      "minecraft": "birch_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Birch_Side.png"
+    },
+    {
+      "minecraft": "birch_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Birch_Top.png"
+    },
+    {
+      "minecraft": "stripped_birch_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Birch_Side.png"
+    },
+    {
+      "minecraft": "stripped_birch_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Birch_Top.png"
+    },
+    {
+      "minecraft": "birch_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Birch_Leaves.png"
+    },
+    {
+      "minecraft": "birch_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Sapling_Oak.png"
+    },
+    {
+      "minecraft": "spruce_planks",
+      "hytale": "Common/BlockTextures/Wood_Darkwood_Planks.png"
+    },
+    {
+      "minecraft": "spruce_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Cedar.png"
+    },
+    {
+      "minecraft": "spruce_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Cedar_Top.png"
+    },
+    {
+      "minecraft": "stripped_spruce_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Cedar.png"
+    },
+    {
+      "minecraft": "stripped_spruce_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Cedar_Top.png"
+    },
+    {
+      "minecraft": "spruce_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Leaves_Fir.png"
+    },
+    {
+      "minecraft": "spruce_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Sapling_Oak.png"
+    },
+    {
+      "minecraft": "jungle_planks",
+      "hytale": "Common/BlockTextures/Wood_Tropicalwood_Planks.png"
+    },
+    {
+      "minecraft": "jungle_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Jungle_Side.png"
+    },
+    {
+      "minecraft": "jungle_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Jungle_Top.png"
+    },
+    {
+      "minecraft": "jungle_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Tropical_Leaves.png"
+    },
+    {
+      "minecraft": "jungle_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Sapling_Oak.png"
+    },
+    {
+      "minecraft": "acacia_planks",
+      "hytale": "Common/BlockTextures/Wood_Redwood_Planks.png"
+    },
+    {
+      "minecraft": "acacia_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_RedWood.png"
+    },
+    {
+      "minecraft": "acacia_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_RedWood_Top.png"
+    },
+    {
+      "minecraft": "acacia_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Redwood_Leaves.png"
+    },
+    {
+      "minecraft": "acacia_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Redwood_Sapling.png"
+    },
+    {
+      "minecraft": "dark_oak_planks",
+      "hytale": "Common/BlockTextures/Wood_Blackwood_Planks.png"
+    },
+    {
+      "minecraft": "dark_oak_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Ash_Side.png"
+    },
+    {
+      "minecraft": "dark_oak_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Ash_Top.png"
+    },
+    {
+      "minecraft": "dark_oak_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Ash_Leaves.png"
+    },
+    {
+      "minecraft": "dark_oak_sapling",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Ash_Leaves.png"
+    },
+    {
+      "minecraft": "mangrove_planks",
+      "hytale": "Common/BlockTextures/Wood_Drywood_Planks.png"
+    },
+    {
+      "minecraft": "mangrove_log",
+      "hytale": "Common/BlockTextures/Wood_trunk_Banyan_Side.png"
+    },
+    {
+      "minecraft": "mangrove_log_top",
+      "hytale": "Common/BlockTextures/Wood_trunk_Banyan_Top.png"
+    },
+    {
+      "minecraft": "mangrove_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Banyan_Leaves.png"
+    },
+    {
+      "minecraft": "cherry_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_CrimsonMaple_Side.png"
+    },
+    {
+      "minecraft": "cherry_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_CrimsonMaple_Top.png"
+    },
+    {
+      "minecraft": "cherry_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Maple_Leaves.png"
+    },
+    {
+      "minecraft": "pale_oak_planks",
+      "hytale": "Common/BlockTextures/Wood_Lightwood_Planks.png"
+    },
+    {
+      "minecraft": "pale_oak_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Aspen_Side.png"
+    },
+    {
+      "minecraft": "pale_oak_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Aspen_Top.png"
+    },
+    {
+      "minecraft": "pale_oak_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Aspen_Leaves.png"
+    },
+    {
+      "minecraft": "poplar_planks",
+      "hytale": "Common/BlockTextures/Wood_Goldenwood_Planks.png"
+    },
+    {
+      "minecraft": "poplar_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Aspen_Side.png"
+    },
+    {
+      "minecraft": "poplar_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Aspen_Top.png"
+    },
+    {
+      "minecraft": "bamboo_block",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Bamboo.png"
+    },
+    {
+      "minecraft": "bamboo_block_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Bamboo_Top.png"
+    },
+    {
+      "minecraft": "bamboo_planks",
+      "hytale": "Common/BlockTextures/Wood_Tropicalwood_Planks.png"
+    },
+    {
+      "minecraft": "bamboo_mosaic",
+      "hytale": "Common/BlockTextures/Wood_Tropicalwood_Planks.png"
+    },
+    {
+      "minecraft": "crimson_stem",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Fire.png"
+    },
+    {
+      "minecraft": "crimson_stem_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Fire_Top.png"
+    },
+    {
+      "minecraft": "crimson_planks",
+      "hytale": "Common/BlockTextures/Wood_Redwood_Planks.png"
+    },
+    {
+      "minecraft": "warped_stem",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Crystal.png"
+    },
+    {
+      "minecraft": "warped_stem_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Crystal_Top.png"
+    },
+    {
+      "minecraft": "warped_planks",
+      "hytale": "Common/BlockTextures/Wood_Blackwood_Planks.png"
+    },
+    {
+      "minecraft": "stripped_acacia_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_RedWood.png"
+    },
+    {
+      "minecraft": "stripped_acacia_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_RedWood_Top.png"
+    },
+    {
+      "minecraft": "stripped_dark_oak_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Ash_Side.png"
+    },
+    {
+      "minecraft": "stripped_dark_oak_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Ash_Top.png"
+    },
+    {
+      "minecraft": "stripped_jungle_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Jungle_Side.png"
+    },
+    {
+      "minecraft": "stripped_jungle_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Jungle_Top.png"
+    },
+    {
+      "minecraft": "stripped_mangrove_log",
+      "hytale": "Common/BlockTextures/Wood_trunk_Banyan_Side.png"
+    },
+    {
+      "minecraft": "stripped_mangrove_log_top",
+      "hytale": "Common/BlockTextures/Wood_trunk_Banyan_Top.png"
+    },
+    {
+      "minecraft": "stripped_cherry_log",
+      "hytale": "Common/BlockTextures/Wood_Trunk_CrimsonMaple_Side.png"
+    },
+    {
+      "minecraft": "stripped_cherry_log_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_CrimsonMaple_Top.png"
+    },
+    {
+      "minecraft": "stripped_bamboo_block",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Bamboo.png"
+    },
+    {
+      "minecraft": "stripped_bamboo_block_top",
+      "hytale": "Common/BlockTextures/Wood_Trunk_Bamboo_Top.png"
+    },
+    {
+      "minecraft": "azalea_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Rhododendron_Pink_Leaves.png"
+    },
+    {
+      "minecraft": "flowering_azalea_leaves",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Rhododendron_Pink_Leaves.png"
+    },
+    {
+      "minecraft": "vine",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Vine.png"
+    },
+    {
+      "minecraft": "hanging_roots",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Roots_Leafy.png"
+    },
+    {
+      "minecraft": "fern",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Fern.png"
+    },
+    {
+      "minecraft": "large_fern_bottom",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Fern.png"
+    },
+    {
+      "minecraft": "large_fern_top",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Fern.png"
+    },
+    {
+      "minecraft": "tall_grass_bottom",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Tall.png"
+    },
+    {
+      "minecraft": "tall_grass_top",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Tall.png"
+    },
+    {
+      "minecraft": "short_grass",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Short.png"
+    },
+    {
+      "minecraft": "dead_bush",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Dry.png"
+    },
+    {
+      "minecraft": "blue_orchid",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Flower_Water_Blue.png"
+    },
+    {
+      "minecraft": "lily_pad",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Flower_Water_Green.png"
+    },
+    {
+      "minecraft": "seagrass",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Water_Tall.png"
+    },
+    {
+      "minecraft": "kelp",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Water_Tall.png"
+    },
+    {
+      "minecraft": "kelp_plant",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Grass_Water_Tall.png"
+    },
+    {
+      "minecraft": "leaf_litter",
+      "hytale": "Common/Icons/ItemsGenerated/Soil_Leaves_Autumn.png"
+    },
+    {
+      "minecraft": "wheat_stage0",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage1",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage2",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage3",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage4",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage5",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage6",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_stage7",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "carrots_stage0",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Carrot.png"
+    },
+    {
+      "minecraft": "carrots_stage1",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Carrot.png"
+    },
+    {
+      "minecraft": "carrots_stage2",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Carrot.png"
+    },
+    {
+      "minecraft": "carrots_stage3",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Carrot.png"
+    },
+    {
+      "minecraft": "potatoes_stage0",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Potato.png"
+    },
+    {
+      "minecraft": "potatoes_stage1",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Potato.png"
+    },
+    {
+      "minecraft": "potatoes_stage2",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Potato.png"
+    },
+    {
+      "minecraft": "potatoes_stage3",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Potato.png"
+    },
+    {
+      "minecraft": "white_wool",
+      "hytale": "Common/BlockTextures/Cloth_White.png"
+    },
+    {
+      "minecraft": "black_wool",
+      "hytale": "Common/BlockTextures/Cloth_Black.png"
+    },
+    {
+      "minecraft": "red_wool",
+      "hytale": "Common/BlockTextures/Cloth_Red.png"
+    },
+    {
+      "minecraft": "blue_wool",
+      "hytale": "Common/BlockTextures/Cloth_Blue.png"
+    },
+    {
+      "minecraft": "green_wool",
+      "hytale": "Common/BlockTextures/Cloth_Green.png"
+    },
+    {
+      "minecraft": "yellow_wool",
+      "hytale": "Common/BlockTextures/Cloth_Yellow.png"
+    },
+    {
+      "minecraft": "orange_wool",
+      "hytale": "Common/BlockTextures/Cloth_Orange.png"
+    },
+    {
+      "minecraft": "purple_wool",
+      "hytale": "Common/BlockTextures/Cloth_Purple.png"
+    },
+    {
+      "minecraft": "pink_wool",
+      "hytale": "Common/BlockTextures/Cloth_Pink.png"
+    },
+    {
+      "minecraft": "gray_wool",
+      "hytale": "Common/BlockTextures/Cloth_Gray.png"
+    },
+    {
+      "minecraft": "cyan_wool",
+      "hytale": "Common/BlockTextures/Cloth_Cyan.png"
+    }
+  ],
+  "item_matches": [
+    {
+      "minecraft": "apple",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Fruit_Apple.png"
+    },
+    {
+      "minecraft": "bread",
+      "hytale": "Common/Icons/ItemsGenerated/Food_Bread.png"
+    },
+    {
+      "minecraft": "carrot",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Carrot.png"
+    },
+    {
+      "minecraft": "potato",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Potato.png"
+    },
+    {
+      "minecraft": "wheat",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Crop_Wheat.png"
+    },
+    {
+      "minecraft": "wheat_seeds",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Seeds_Wheat.png"
+    },
+    {
+      "minecraft": "pumpkin_pie",
+      "hytale": "Common/Icons/ItemsGenerated/Food_Pie_Apple.png"
+    },
+    {
+      "minecraft": "iron_ingot",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Iron.png"
+    },
+    {
+      "minecraft": "gold_ingot",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Gold.png"
+    },
+    {
+      "minecraft": "copper_ingot",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Copper.png"
+    },
+    {
+      "minecraft": "diamond",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Cobalt.png"
+    },
+    {
+      "minecraft": "emerald",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Adamantite.png"
+    },
+    {
+      "minecraft": "lapis_lazuli",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Silver.png"
+    },
+    {
+      "minecraft": "raw_iron",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Iron.png"
+    },
+    {
+      "minecraft": "raw_gold",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Gold.png"
+    },
+    {
+      "minecraft": "raw_copper",
+      "hytale": "Common/Icons/ItemsGenerated/Ore_Copper.png"
+    },
+    {
+      "minecraft": "iron_nugget",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Iron.png"
+    },
+    {
+      "minecraft": "gold_nugget",
+      "hytale": "Common/Icons/ItemsGenerated/Ingredient_Bar_Gold.png"
+    },
+    {
+      "minecraft": "wooden_pickaxe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Pickaxe_Wood.png"
+    },
+    {
+      "minecraft": "stone_pickaxe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Pickaxe_Crude.png"
+    },
+    {
+      "minecraft": "iron_pickaxe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Pickaxe_Iron.png"
+    },
+    {
+      "minecraft": "diamond_pickaxe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Pickaxe_Cobalt.png"
+    },
+    {
+      "minecraft": "wooden_sword",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Sword_Wood.png"
+    },
+    {
+      "minecraft": "stone_sword",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Sword_Crude.png"
+    },
+    {
+      "minecraft": "iron_sword",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Sword_Iron.png"
+    },
+    {
+      "minecraft": "diamond_sword",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Sword_Cobalt.png"
+    },
+    {
+      "minecraft": "wooden_axe",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Axe_Crude.png"
+    },
+    {
+      "minecraft": "stone_axe",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Axe_Stone_Trork.png"
+    },
+    {
+      "minecraft": "iron_axe",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Axe_Iron.png"
+    },
+    {
+      "minecraft": "diamond_axe",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Axe_Cobalt.png"
+    },
+    {
+      "minecraft": "wooden_shovel",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Shovel_Crude.png"
+    },
+    {
+      "minecraft": "stone_shovel",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Shovel_Crude.png"
+    },
+    {
+      "minecraft": "iron_shovel",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Shovel_Iron.png"
+    },
+    {
+      "minecraft": "diamond_shovel",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Shovel_Cobalt.png"
+    },
+    {
+      "minecraft": "stone_hoe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Hoe_Crude.png"
+    },
+    {
+      "minecraft": "iron_hoe",
+      "hytale": "Common/Icons/ItemsGenerated/Tool_Hoe_Iron.png"
+    },
+    {
+      "minecraft": "bucket",
+      "hytale": "Common/Icons/ItemsGenerated/Container_Bucket.png"
+    },
+    {
+      "minecraft": "water_bucket",
+      "hytale": "Common/Icons/ItemsGenerated/Container_Bucket_Water.png"
+    },
+    {
+      "minecraft": "milk_bucket",
+      "hytale": "Common/Icons/ItemsGenerated/Container_Bucket_Milk.png"
+    },
+    {
+      "minecraft": "lantern",
+      "hytale": "Common/Icons/ItemsGenerated/Furniture_Ancient_Torch.png"
+    },
+    {
+      "minecraft": "stick",
+      "hytale": "Common/Icons/ItemsGenerated/Wood_Oak_Branch_Short.png"
+    },
+    {
+      "minecraft": "bow",
+      "hytale": "Common/Icons/ItemsGenerated/Weapon_Bow_Crude.png"
+    },
+    {
+      "minecraft": "golden_apple",
+      "hytale": "Common/Icons/ItemsGenerated/Plant_Fruit_Apple.png"
+    }
+  ],
+  "note": "Only existing PyCraft filenames were replaced; unmatched files preserved."
+}

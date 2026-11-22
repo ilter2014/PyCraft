@@ -1,0 +1,70 @@
+{
+  "changed": 8,
+  "files": [
+    {
+      "target": "coal_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Basalt_Iron_Cracks.png",
+      "mask_host": "Common/BlockTextures/Rock_Basalt.png",
+      "display_host": "Common/BlockTextures/Rock_Basalt.png",
+      "style": "coal",
+      "output": "16x16"
+    },
+    {
+      "target": "iron_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Basalt_Iron_Cracks02.png",
+      "mask_host": "Common/BlockTextures/Rock_Basalt.png",
+      "display_host": "Common/BlockTextures/Rock_Basalt.png",
+      "style": "iron",
+      "output": "16x16"
+    },
+    {
+      "target": "copper_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Basalt_Iron_Cracks03.png",
+      "mask_host": "Common/BlockTextures/Rock_Basalt.png",
+      "display_host": "Common/BlockTextures/Rock_Basalt.png",
+      "style": "copper",
+      "output": "16x16"
+    },
+    {
+      "target": "gold_ore.png",
+      "vein_source": "Common/BlockTextures/Soil_Mud_Dry_Thorium_Cracks02.png",
+      "mask_host": "Common/BlockTextures/Soil_Mud_Dry.png",
+      "display_host": "Common/BlockTextures/Rock_Stone.png",
+      "style": "gold",
+      "output": "16x16"
+    },
+    {
+      "target": "diamond_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Slate_Cobalt_Cracks03.png",
+      "mask_host": "Common/BlockTextures/Rock_Slate.png",
+      "display_host": "Common/BlockTextures/Rock_Slate.png",
+      "style": "diamond",
+      "output": "16x16"
+    },
+    {
+      "target": "lapis_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Slate_Cobalt_Cracks02.png",
+      "mask_host": "Common/BlockTextures/Rock_Slate.png",
+      "display_host": "Common/BlockTextures/Rock_Slate.png",
+      "style": "lapis",
+      "output": "16x16"
+    },
+    {
+      "target": "emerald_ore.png",
+      "vein_source": "Common/BlockTextures/Soil_Mud_Dry_Thorium_Cracks.png",
+      "mask_host": "Common/BlockTextures/Soil_Mud_Dry.png",
+      "display_host": "Common/BlockTextures/Rock_Stone.png",
+      "style": "emerald",
+      "output": "16x16"
+    },
+    {
+      "target": "redstone_ore.png",
+      "vein_source": "Common/BlockTextures/Rock_Magma_Cooled_Adamantite_Cracks02.png",
+      "mask_host": "Common/BlockTextures/Rock_Magma_Cooled.png",
+      "display_host": "Common/BlockTextures/Rock_Magma_Cooled.png",
+      "style": "redstone",
+      "output": "16x16"
+    }
+  ],
+  "original_backup": "C:\\Users\\İlter\\Desktop\\PyCraft\\Hytale_Ore_Textures_Backup_20261122"
+}

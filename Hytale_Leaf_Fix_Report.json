@@ -1,0 +1,105 @@
+{
+  "changed": 14,
+  "files": [
+    {
+      "target": "oak_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Oak.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "birch_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Birch.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "spruce_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/PineShape_Textures/Fir.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "jungle_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/DownShape_Textures/Banyan.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "acacia_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/UpShapeSoft_Textures/Redwood.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "dark_oak_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Oak.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "mangrove_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/DownShape_Textures/Banyan.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "cherry_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/CrimsonMaple.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "pale_oak_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Aspen.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "orange_poplar_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Aspen.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "red_poplar_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/CrimsonMaple.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "yellow_poplar_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Aspen.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "azalea_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Oak.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    },
+    {
+      "target": "flowering_azalea_leaves.png",
+      "source": "Common/Blocks/Foliage/Leaves/Ball_Textures/Oak.png",
+      "cluster_size": "12x12",
+      "transparent_border": 2,
+      "alpha": "preserved"
+    }
+  ],
+  "original_leaf_backup": "C:\\Users\\İlter\\Desktop\\PyCraft\\Hytale_Leaf_Fix_Backup_20261122",
+  "note": "Leaf-only update. Hytale leaf clusters are smaller than the 16x16 tile and retain transparent gaps."
+}
