@@ -73,6 +73,8 @@ RENDER_DISTANCE = 128.0
 FOG_START, FOG_END = 62.0, 112.0
 FOV = 74.0
 MAX_REACH = 7.0
+SETTINGS_FILE = ROOT / "settings.json"
+DEFAULT_KEYBINDS = {"forward": pygame.K_w, "back": pygame.K_s, "left": pygame.K_a, "right": pygame.K_d, "jump": pygame.K_SPACE, "sprint": pygame.K_LSHIFT, "inventory": pygame.K_e, "fly": pygame.K_f}
 
 GRASS_TINT = (160, 215, 100)
 FOLIAGE_TINT = (135, 205, 75)
@@ -1816,6 +1818,11 @@ class Game:
         self.auto_scene = scene
         self.frame_count = 0
         self.last_time = time.perf_counter()
+        self.render_distance = 128.0
+        self.keybinds = dict(DEFAULT_KEYBINDS)
+        self.rebind_action = None
+        self.settings_return_state = "menu"
+        self._load_settings()
 
         # Creative inventory / items.
         self.inv_tab = 0                 # 0 = blocks, 1 = items
@@ -1856,6 +1863,43 @@ class Game:
 
         if self.net is not None:
             self._register_net_peers()
+
+    # -- settings ------------------------------------------------------------
+
+    def _load_settings(self) -> None:
+        try:
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            self.render_distance = float(max(48, min(192, data.get("render_distance", 128))))
+            for action, key in data.get("keybinds", {}).items():
+                if action in DEFAULT_KEYBINDS and isinstance(key, int):
+                    self.keybinds[action] = key
+        except (OSError, ValueError, TypeError):
+            pass
+
+    def _save_settings(self) -> None:
+        try:
+            SETTINGS_FILE.write_text(json.dumps({"render_distance": self.render_distance, "keybinds": self.keybinds}, indent=2), encoding="utf-8")
+        except OSError:
+            self.toast = "Settings could not be saved"
+            self.toast_timer = 3.0
+
+    def open_settings(self, return_state: str) -> None:
+        self.settings_return_state = return_state
+        self.rebind_action = None
+        self.state = "settings"
+        self.set_captured(False)
+
+    def close_settings(self) -> None:
+        self._save_settings()
+        self.rebind_action = None
+        target = self.settings_return_state
+        if target == "paused":
+            self.state = "paused"
+        elif target == "playing":
+            self.state = "playing"
+            self.set_captured(True)
+        else:
+            self.state = "menu"
 
     # -- state --------------------------------------------------------------
 
@@ -2414,6 +2458,9 @@ class Game:
             return
 
         if k == pygame.K_ESCAPE:
+            if self.state == "settings" and self.rebind_action:
+                self.rebind_action = None
+                return
             if self.state == "playing":
                 self.pause()
             elif self.state == "paused":
@@ -2433,6 +2480,15 @@ class Game:
             elif self.state == "create_world":
                 self.create_for_host = False
                 self.state = self.create_return_state
+            elif self.state == "settings":
+                self.close_settings()
+            return
+
+        if self.state == "settings":
+            if self.rebind_action:
+                self.keybinds[self.rebind_action] = k
+                self.rebind_action = None
+                self._save_settings()
             return
 
         if self.state == "menu":
@@ -2516,11 +2572,11 @@ class Game:
 
         if self.state != "playing":
             return
-        if k == pygame.K_e:
+        if k == self.keybinds["inventory"]:
             self.open_inventory()
         elif k == pygame.K_t:
             self.open_chat()
-        elif k == pygame.K_f:
+        elif k == self.keybinds["fly"]:
             self.player.fly = not self.player.fly
             self.toast = "Fly mode " + ("ON" if self.player.fly else "OFF")
             self.toast_timer = 2.0
@@ -2539,7 +2595,9 @@ class Game:
         pos = pygame.mouse.get_pos()
         if self.state == "menu":
             hit = self.renderer.hit_hotspot(pos)
-            if hit == "play":
+            if hit == "settings":
+                self.open_settings("menu")
+            elif hit == "play":
                 self.state = "world_select"
                 self.world_status = ""
             elif hit == "multiplayer":
@@ -2634,9 +2692,24 @@ class Game:
                 self.mp_focus = False
                 self.mp_name_focus = False
             return
+        if self.state == "settings":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit == "settings_back":
+                self.close_settings()
+            elif hit == "distance_down":
+                self.render_distance = max(48.0, self.render_distance - 16.0)
+                self._save_settings()
+            elif hit == "distance_up":
+                self.render_distance = min(192.0, self.render_distance + 16.0)
+                self._save_settings()
+            elif hit and hit.startswith("bind:"):
+                self.rebind_action = hit.split(":", 1)[1]
+            return
         if self.state == "paused":
             hit = self.renderer.hit_hotspot(pos)
-            if hit == "resume":
+            if hit == "settings":
+                self.open_settings("paused")
+            elif hit == "resume":
                 self.resume()
             elif hit == "title":
                 self.to_title()
@@ -2741,15 +2814,15 @@ class Game:
             forward = strafe = 0
             jump = sprint = descend = False
         else:
-            forward = (1 if keys[pygame.K_w] else 0) - (1 if keys[pygame.K_s] else 0)
-            strafe = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
+            forward = (1 if keys[self.keybinds["forward"]] else 0) - (1 if keys[self.keybinds["back"]] else 0)
+            strafe = (1 if keys[self.keybinds["right"]] else 0) - (1 if keys[self.keybinds["left"]] else 0)
             if self.player.fly:
-                sprint = bool(keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL])
+                sprint = bool(keys[self.keybinds["sprint"]] or keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL])
                 descend = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
             else:
-                sprint = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
+                sprint = bool(keys[self.keybinds["sprint"]])
                 descend = False
-            jump = bool(keys[pygame.K_SPACE])
+            jump = bool(keys[self.keybinds["jump"]])
         self.player.update(dt, float(forward), float(strafe), jump, sprint, descend)
         self.break_cool = max(0.0, self.break_cool - dt)
         self.place_cool = max(0.0, self.place_cool - dt)
@@ -3552,7 +3625,7 @@ class Renderer:
 
     # -- frustum culling ----------------------------------------------------
 
-    def visible_chunks(self, world: World, vp: np.ndarray, cam) -> list:
+    def visible_chunks(self, world: World, vp: np.ndarray, cam, render_distance=RENDER_DISTANCE) -> list:
         """Layer dicts of chunks inside the view frustum and draw distance,
         sorted nearest-first."""
         if self._cull_version != world.mesh_version:
@@ -3583,7 +3656,7 @@ class Renderer:
         inside = (dist >= 0.0).all(axis=1)
         d = self._cull_ctr - np.array([cam[0], cam[2]])
         d2 = (d * d).sum(axis=1)
-        inside &= d2 <= (RENDER_DISTANCE + 32.0) ** 2
+        inside &= d2 <= (render_distance + 32.0) ** 2
         idx = np.flatnonzero(inside)
         if idx.size == 0:
             return []
@@ -3639,12 +3712,14 @@ class Renderer:
         prog = self.terrain_prog
         prog["u_vp"].write(vp_bytes)
         prog["u_cam"].value = tuple(float(v) for v in cam)
+        fog_start = min(FOG_START, game.render_distance * 0.58)
+        fog_end = min(FOG_END, game.render_distance)
         if player.underwater:
             prog["u_fog"].value = (0.045, 0.16, 0.28)
             prog["u_fog_range"].value = (3.0, 34.0)
         else:
             prog["u_fog"].value = SKY_HORIZON
-            prog["u_fog_range"].value = (FOG_START, FOG_END)
+            prog["u_fog_range"].value = (fog_start, fog_end)
         prog["u_tex"].value = 0
         prog["u_alpha"].value = 1.0
         prog["u_cutout"].value = 1
@@ -3652,7 +3727,7 @@ class Renderer:
         self.atlas_tex.use(0)
 
         tri = moderngl.TRIANGLES
-        visible = self.visible_chunks(world, vp, cam)   # nearest first
+        visible = self.visible_chunks(world, vp, cam, game.render_distance)   # nearest first
         game.drawn_chunks = len(visible)
 
         # Opaque cubes, front to back (best early-Z rejection).
@@ -3865,7 +3940,8 @@ class Renderer:
         by = int(h * 0.50)
         self.draw_button(bx, by, bw, bh, "SINGLEPLAYER", "play")
         self.draw_button(bx, by + bh + 14, bw, bh, "MULTIPLAYER", "multiplayer")
-        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
+        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "SETTINGS", "settings")
+        self.draw_button(bx, by + (bh + 14) * 3, bw, bh, "QUIT GAME", "quit")
 
         self.text("WASD MOVE   SPACE JUMP   SHIFT SPRINT   F FLY",
                   w // 2, h - 76, scale=2, align="center",
@@ -4159,6 +4235,26 @@ class Renderer:
         if game.debug:
             self.draw_debug(game)
 
+    def draw_settings(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect(0, 0, w, h, col(0, 0, 0, 205))
+        self.text("SETTINGS", w // 2, 38, scale=5, align="center")
+        pw = min(700, w - 60)
+        px = (w - pw) // 2
+        self.text("VIEW DISTANCE", px + 12, 108, scale=2)
+        self.draw_button(px + pw - 210, 98, 48, 38, "-", "distance_down")
+        self.text(f"{int(game.render_distance)} blocks", w // 2, 110, scale=2, align="center", color=col(255, 235, 130))
+        self.draw_button(px + pw - 152, 98, 48, 38, "+", "distance_up")
+        actions = [("forward", "Move forward"), ("back", "Move backward"), ("left", "Move left"), ("right", "Move right"), ("jump", "Jump"), ("sprint", "Sprint"), ("inventory", "Inventory"), ("fly", "Toggle fly")]
+        for i, (action, label) in enumerate(actions):
+            yy = 150 + i * 48
+            self.text(label, px + 18, yy + 10, scale=2)
+            key_name = "PRESS A KEY..." if game.rebind_action == action else pygame.key.name(game.keybinds[action]).upper()
+            self.draw_button(px + pw - 220, yy, 200, 38, key_name, "bind:" + action)
+        self.draw_button(w // 2 - 150, h - 56, 300, 42, "BACK", "settings_back")
+        if game.rebind_action:
+            self.text("Press the new key (ESC cancels)", w // 2, h - 88, scale=2, align="center", color=col(255, 225, 120))
+
     def draw_pause(self, game: "Game") -> None:
         w, h = self.width, self.height
         self.rect(0, 0, w, h, col(0, 0, 0, 155))
@@ -4170,7 +4266,8 @@ class Renderer:
         by = int(h * 0.41)
         self.draw_button(bx, by, bw, bh, "BACK TO GAME", "resume")
         self.draw_button(bx, by + (bh + 14), bw, bh, "QUIT TO TITLE", "title")
-        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
+        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "SETTINGS", "settings")
+        self.draw_button(bx, by + (bh + 14) * 3, bw, bh, "QUIT GAME", "quit")
         if game.net is not None:
             role = "HOST" if game.net.is_host else "CLIENT"
             self.text(f"Multiplayer {role}  -  "
@@ -4294,6 +4391,13 @@ class Renderer:
 
     def draw(self, game: "Game") -> None:
         self.time = time.perf_counter()
+        if game.state == "settings":
+            if game.settings_return_state in ("paused", "playing"):
+                self.draw_world(game)
+            self._begin_ui()
+            self.draw_settings(game)
+            self._flush_ui()
+            return
         if game.state in ("menu", "multiplayer", "world_select", "create_world",
                           "delete_world_confirm", "host_world_select"):
             self.ctx.viewport = (0, 0, self.width, self.height)
