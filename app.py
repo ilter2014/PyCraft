@@ -1800,6 +1800,13 @@ class Game:
         self.state = "menu"
         self.hotbar = list(HOTBAR_DEFAULT)
         self.slot = 0
+        # Boats are independent world entities, not blocks.
+        self.boats: list[dict] = []
+        self.boat_item_ids = {
+            -(i + 1) for i, item in enumerate(ITEMS)
+            if item.key.endswith("_boat") and not item.key.endswith("_chest_boat")
+        }
+        self.boat_item_id = - (ITEM_INDEX.get("oak_boat", 0) + 1)
         self.running = True
         self.captured = False
         self.debug = False
@@ -2014,6 +2021,7 @@ class Game:
         self.active_world_file = None
         self.renderer.release_world(self.world)
         self.world = build_world(self.renderer, seed)
+        self.boats = []
         self.player = Player(self.world)
         self.player.respawn()
         self.remote_players.clear()
@@ -2182,6 +2190,10 @@ class Game:
                 },
                 "blocks": [[x, y, z, int(block)]
                            for (x, y, z), block in sorted(self.world.edits.items())],
+                "boats": [[round(float(b["x"]), 4), round(float(b["y"]), 4),
+                           round(float(b["z"]), 4), round(float(b.get("yaw", 0.0)), 4),
+                           int(b.get("item", self.boat_item_id))]
+                          for b in self.boats],
             }
             temp_path = self.active_world_file.with_suffix(".json.tmp")
             with temp_path.open("w", encoding="utf-8") as f:
@@ -2222,6 +2234,7 @@ class Game:
             self.net = None
         self.renderer.release_world(self.world)
         self.world = build_world(self.renderer, seed)
+        self.boats = []
         self.player = Player(self.world)
         self.player.respawn()
         self.remote_players.clear()
@@ -2262,6 +2275,18 @@ class Game:
             self.renderer.draw_loading(0.02, "LOADING WORLD")
             self.renderer.release_world(self.world)
             self.world = build_world(self.renderer, seed)
+            self.boats = []
+            for boat in payload.get("boats", []):
+                if (isinstance(boat, list) and len(boat) >= 3 and len(self.boats) < 10000):
+                    try:
+                        bx, by, bz = (float(v) for v in boat[:3])
+                        byaw = float(boat[3]) if len(boat) > 3 else 0.0
+                        bitem = int(boat[4]) if len(boat) > 4 else self.boat_item_id
+                        if all(math.isfinite(v) for v in (bx, by, bz, byaw)) and bitem in self.boat_item_ids:
+                            self.boats.append({"x": bx, "y": by, "z": bz,
+                                               "yaw": byaw, "item": bitem})
+                    except (TypeError, ValueError, OverflowError):
+                        continue
             for item in edits:
                 if not isinstance(item, list) or len(item) != 4:
                     continue
@@ -2730,7 +2755,11 @@ class Game:
             if event.button == 1 and self.break_cool <= 0.0:
                 self.break_block()
             elif event.button == 3 and self.place_cool <= 0.0:
-                self.place_block()
+                held = self.hotbar[self.slot]
+                if held in self.boat_item_ids:
+                    self.place_boat()
+                else:
+                    self.place_block()
             elif event.button == 2:
                 hit = self.world.raycast(self.player.eye_pos(),
                                          self.player.forward(), MAX_REACH)
@@ -2749,8 +2778,147 @@ class Game:
         return self.world.raycast(self.player.eye_pos(), self.player.forward(),
                                   MAX_REACH)
 
+    def _boat_hit(self):
+        """Return the nearest boat intersected by the player's view ray."""
+        origin = self.player.eye_pos().astype(float)
+        direction = normalize(self.player.forward()).astype(float)
+        nearest = None
+        nearest_t = MAX_REACH + 1.0
+
+        for index, boat in enumerate(self.boats):
+            yaw = float(boat.get("yaw", 0.0))
+            cy, sy = math.cos(yaw), math.sin(yaw)
+            # Transform the ray into the boat's local coordinate system.
+            rel = origin - np.array([boat["x"], boat["y"], boat["z"]])
+            local_origin = np.array([
+                rel[0] * cy - rel[2] * sy,
+                rel[1],
+                rel[0] * sy + rel[2] * cy,
+            ])
+            local_direction = np.array([
+                direction[0] * cy - direction[2] * sy,
+                direction[1],
+                direction[0] * sy + direction[2] * cy,
+            ])
+
+            lo = (-0.92, -0.35, -0.92)
+            hi = (0.92, 0.55, 0.92)
+            t_min, t_max = 0.0, MAX_REACH
+            for axis in range(3):
+                if abs(local_direction[axis]) < 1e-8:
+                    if local_origin[axis] < lo[axis] or local_origin[axis] > hi[axis]:
+                        t_min = MAX_REACH + 1.0
+                        break
+                else:
+                    a = (lo[axis] - local_origin[axis]) / local_direction[axis]
+                    b = (hi[axis] - local_origin[axis]) / local_direction[axis]
+                    if a > b:
+                        a, b = b, a
+                    t_min = max(t_min, a)
+                    t_max = min(t_max, b)
+                    if t_min > t_max:
+                        break
+            if t_min <= t_max and t_min < nearest_t:
+                nearest, nearest_t = index, t_min
+        return nearest
+
+    def place_boat(self) -> None:
+        """Place a boat on the first water surface or solid block in view."""
+        held = self.hotbar[self.slot]
+        if held not in self.boat_item_ids:
+            return
+
+        origin = self.player.eye_pos().astype(float)
+        direction = normalize(self.player.forward()).astype(float)
+        hit_cell = None
+        hit_block = AIR
+
+        # The normal block raycast deliberately ignores water. Boats need a
+        # separate ray so a water column is a valid placement target.
+        last_cell = None
+        distance = 0.0
+        while distance <= MAX_REACH:
+            point = origin + direction * distance
+            cell = (math.floor(point[0]), math.floor(point[1]),
+                    math.floor(point[2]))
+            if cell != last_cell:
+                block = self.world.get(*cell)
+                if block == WATER or (block != AIR and IS_SOLID[block]):
+                    hit_cell = cell
+                    hit_block = block
+                    break
+                last_cell = cell
+            distance += 0.035
+
+        if hit_cell is None:
+            return
+
+        tx, ty, tz = hit_cell
+        if hit_block == WATER:
+            # Float at the top of the connected water column, not on the
+            # terrain underneath it.
+            surface_y = ty + 1
+            while surface_y < WY and self.world.get(tx, surface_y, tz) == WATER:
+                surface_y += 1
+            bx, by, bz = tx + 0.5, float(surface_y) - 0.20, tz + 0.5
+        else:
+            bx, by, bz = tx + 0.5, float(ty + 1), tz + 0.5
+
+        if any((b["x"] - bx) ** 2 + (b["z"] - bz) ** 2 < 1.35 ** 2
+               and abs(b["y"] - by) < 0.8 for b in self.boats):
+            return
+
+        # Do not spawn the hull inside terrain or the player.
+        if ((self.player.pos[0] - bx) ** 2 +
+                (self.player.pos[2] - bz) ** 2 < 1.05 ** 2):
+            return
+        for dx in (-0.45, 0.0, 0.45):
+            for dz in (-0.45, 0.0, 0.45):
+                for y in (by + 0.08, by + 0.28):
+                    block = self.world.get(math.floor(bx + dx),
+                                            math.floor(y),
+                                            math.floor(bz + dz))
+                    if IS_SOLID[block]:
+                        return
+
+        forward = self.player.forward()
+        yaw = math.atan2(float(forward[0]), float(forward[2]))
+        self.boats.append({"x": bx, "y": by, "z": bz,
+                           "yaw": yaw, "item": held})
+        self.place_cool = 0.25
+        self.toast = "Boat placed"
+        self.toast_timer = 1.5
+        if self.active_world_file is not None:
+            self.save_world(silent=True)
+
     def break_block(self, cached: bool = False) -> None:
-        hit = self._hit(cached)
+        boat_index = self._boat_hit()
+        block_hit = self._hit(cached)
+        if boat_index is not None:
+            boat = self.boats[boat_index]
+            if block_hit is None:
+                self.boats.pop(boat_index)
+            else:
+                # Break the boat only when it is closer than the block.
+                origin = self.player.eye_pos().astype(float)
+                direction = normalize(self.player.forward()).astype(float)
+                boat_center = np.array([boat["x"], boat["y"] + 0.2, boat["z"]])
+                boat_distance = float(np.dot(boat_center - origin, direction))
+                block_pos = np.array(block_hit[0], dtype=float) + 0.5
+                block_distance = float(np.dot(block_pos - origin, direction))
+                if boat_distance <= block_distance:
+                    self.boats.pop(boat_index)
+                else:
+                    boat_index = None
+            if boat_index is not None:
+                self.hotbar[self.slot] = int(boat.get("item", self.boat_item_id))
+                self.break_cool = 0.20
+                self.toast = "Boat picked up"
+                self.toast_timer = 1.5
+                if self.active_world_file is not None:
+                    self.save_world(silent=True)
+                return
+        hit = block_hit
         if hit is None:
             return
         pos, _normal, _block = hit
@@ -2810,12 +2978,15 @@ class Game:
         self.break_cool = max(0.0, self.break_cool - dt)
         self.place_cool = max(0.0, self.place_cool - dt)
         self.toast_timer = max(0.0, self.toast_timer - dt)
-        if self.captured and not self.chat_open and self.target is not None:
+        if self.captured and not self.chat_open and (self.target is not None or self.boats):
             mouse = pygame.mouse.get_pressed()
             if mouse[0] and self.break_cool <= 0.0:
                 self.break_block(cached=True)
             if mouse[2] and self.place_cool <= 0.0:
-                self.place_block(cached=True)
+                if self.hotbar[self.slot] in self.boat_item_ids:
+                    self.place_boat()
+                else:
+                    self.place_block(cached=True)
 
         # Smooth remote players and keep the host updated.
         k = min(1.0, 14.0 * dt)
@@ -3084,6 +3255,126 @@ def _skin_cube_mesh(w, h, d, u, v):
 
 
 
+
+BOAT_VS = """
+#version 330
+in vec3 in_pos;
+in vec2 in_uv;
+uniform mat4 u_vp;
+uniform mat4 u_part;
+uniform vec3 u_center;
+uniform float u_yaw;
+out vec2 v_uv;
+void main() {
+    vec4 local = u_part * vec4(in_pos, 1.0);
+    float c = cos(u_yaw);
+    float s = sin(u_yaw);
+    vec3 p = vec3(local.x * c + local.z * s,
+                  local.y,
+                  -local.x * s + local.z * c);
+    v_uv = in_uv;
+    gl_Position = u_vp * vec4(u_center + p, 1.0);
+}
+"""
+
+BOAT_FS = """
+#version 330
+uniform sampler2D u_tex;
+in vec2 v_uv;
+out vec4 frag;
+void main() {
+    vec4 texel = texture(u_tex, v_uv);
+    if (texel.a < 0.08) discard;
+    frag = texel;
+}
+"""
+
+
+def _boat_translation(offset):
+    m = np.identity(4, dtype=np.float64)
+    m[:3, 3] = np.asarray(offset, dtype=np.float64)
+    return m
+
+
+def _boat_rotation(rotation):
+    x, y, z = (float(v) for v in rotation)
+    cx, sx = math.cos(x), math.sin(x)
+    cy, sy = math.cos(y), math.sin(y)
+    cz, sz = math.cos(z), math.sin(z)
+    rx = np.array([[1,0,0,0],[0,cx,-sx,0],[0,sx,cx,0],[0,0,0,1]], dtype=np.float64)
+    ry = np.array([[cy,0,sy,0],[0,1,0,0],[-sy,0,cy,0],[0,0,0,1]], dtype=np.float64)
+    rz = np.array([[cz,-sz,0,0],[sz,cz,0,0],[0,0,1,0],[0,0,0,1]], dtype=np.float64)
+    return rz @ ry @ rx
+
+
+def _boat_pose_matrix(pose):
+    return (_boat_translation(pose.get("offset", (0,0,0))) @
+            _boat_rotation(pose.get("rotation", (0,0,0))))
+
+
+def _boat_global_matrix(operations):
+    result = np.identity(4, dtype=np.float64)
+    for operation in operations:
+        if "translate" in operation:
+            op = _boat_translation(operation["translate"])
+        elif "rotate" in operation:
+            op = _boat_rotation(operation["rotate"])
+        elif "scale" in operation:
+            op = np.identity(4, dtype=np.float64)
+            op[0,0], op[1,1], op[2,2] = operation["scale"]
+        else:
+            continue
+        result = result @ op
+    return result
+
+
+def _boat_part_vertices(part, texture_size, matrix=None):
+    """Build the exact six-face UV cuboids used by Minecraft entity models."""
+    tw, th = texture_size
+    corners = np.array([
+        [0,0,0], [1,0,0], [1,0,1], [0,0,1],
+        [0,1,0], [1,1,0], [1,1,1], [0,1,1],
+    ], dtype=np.float64)
+    faces = (
+        ((3,2,6,7),  lambda u,v,w,h,d: (u+d,v+d,w,h)),
+        ((0,1,5,4),  lambda u,v,w,h,d: (u+2*d+w,v+d,w,h)),
+        ((0,3,7,4),  lambda u,v,w,h,d: (u,v+d,d,h)),
+        ((1,2,6,5),  lambda u,v,w,h,d: (u+d+w,v+d,d,h)),
+        ((4,5,6,7),  lambda u,v,w,h,d: (u+d,v,w,d)),
+        ((0,1,2,3),  lambda u,v,w,h,d: (u+d+w,v,w,d)),
+    )
+    out = []
+    for cube in part.get("cubes", []):
+        origin = np.asarray(cube["origin"], dtype=np.float64)
+        size = np.asarray(cube["size"], dtype=np.float64)
+        u, v = cube["uv"]
+        w, h, d = (float(x) for x in size)
+        points = origin + corners * size
+        if matrix is not None:
+            hp = np.column_stack((points, np.ones(8, dtype=np.float64)))
+            points = (matrix @ hp.T).T[:, :3] / 16.0
+        for face_index, (indices, uv_rect) in enumerate(faces):
+            ux, uy, uw, uh = uv_rect(float(u), float(v), w, h, d)
+            if face_index < 4:
+                uv4 = (
+                    (ux/tw, 1-(uy+uh)/th),
+                    ((ux+uw)/tw, 1-(uy+uh)/th),
+                    ((ux+uw)/tw, 1-uy/th),
+                    (ux/tw, 1-uy/th),
+                )
+            else:
+                uv4 = (
+                    (ux/tw, 1-uy/th),
+                    ((ux+uw)/tw, 1-uy/th),
+                    ((ux+uw)/tw, 1-(uy+uh)/th),
+                    (ux/tw, 1-(uy+uh)/th),
+                )
+            for j in (0,1,2,0,2,3):
+                out.extend(points[indices[j]].tolist())
+                out.extend(uv4[j])
+    return np.asarray(out, dtype=np.float32)
+
+
 UI_VS = """
 #version 330
 in vec2 in_pos;
@@ -3227,6 +3518,60 @@ class Renderer:
                 print(f"[skin] failed to load {skin_path}: {exc}", file=sys.stderr)
         else:
             print("[skin] skin.png not found. Put a classic 64x64 Minecraft skin next to app.py.", file=sys.stderr)
+
+
+        # Vanilla Minecraft boat entity model + its full-resolution entity textures.
+        self.boat_prog = ctx.program(vertex_shader=BOAT_VS, fragment_shader=BOAT_FS)
+        self.boat_prog["u_tex"].value = 0
+        self.boat_hull_vao = None
+        self.boat_paddle_vaos = {}
+        self.boat_paddle_matrices = {}
+        self.boat_textures = {}
+        boat_dir = ASSET_DIR / "entity" / "boat"
+        model_path = boat_dir / "boat_model.json"
+        if model_path.is_file():
+            try:
+                model = json.loads(model_path.read_text(encoding="utf-8-sig"))
+                layer = model["layers"]["main"]
+                root = layer["root"]
+                texture_size = tuple(layer.get("texture", (128, 64)))
+                global_matrix = _boat_global_matrix(model.get("transform", []))
+                root_matrix = global_matrix @ _boat_pose_matrix(root.get("pose", {}))
+                hull_vertices = []
+                for name, part in root.get("children", {}).items():
+                    part_matrix = root_matrix @ _boat_pose_matrix(part.get("pose", {}))
+                    if name in ("left_paddle", "right_paddle"):
+                        raw = _boat_part_vertices(part, texture_size)
+                        if raw.size:
+                            vbo = ctx.buffer(raw.tobytes())
+                            self.boat_paddle_vaos[name] = ctx.vertex_array(
+                                self.boat_prog, [(vbo, "3f 2f", "in_pos", "in_uv")])
+                            unit_scale = np.diag([1/16, 1/16, 1/16, 1.0])
+                            self.boat_paddle_matrices[name] = unit_scale @ part_matrix
+                    else:
+                        vertices = _boat_part_vertices(part, texture_size, part_matrix)
+                        if vertices.size:
+                            hull_vertices.append(vertices)
+                if hull_vertices:
+                    hull = np.concatenate(hull_vertices).astype(np.float32, copy=False)
+                    vbo = ctx.buffer(hull.tobytes())
+                    self.boat_hull_vao = ctx.vertex_array(
+                        self.boat_prog, [(vbo, "3f 2f", "in_pos", "in_uv")])
+                for texture_path in boat_dir.glob("*.png"):
+                    try:
+                        with Image.open(texture_path) as source:
+                            texture = self._upload_texture(source.convert("RGBA"),
+                                                           repeat=False, linear=False,
+                                                           mipmaps=False)
+                        self.boat_textures[texture_path.stem] = texture
+                    except Exception as texture_error:
+                        print(f"[boat] texture failed {texture_path.name}: {texture_error}",
+                              file=sys.stderr)
+                print(f"[boat] vanilla model loaded; {len(self.boat_textures)} wood textures")
+            except Exception as exc:
+                print(f"[boat] vanilla model load failed: {exc}", file=sys.stderr)
+        else:
+            print("[boat] Assets/entity/boat/boat_model.json missing", file=sys.stderr)
 
         # UI batches (indexed quads).
         self.ui_solid = array("f")
@@ -3729,6 +4074,51 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
+        # Minecraft's textured 3D boat entity model, including both animated paddles.
+        if game.boats and self.boat_hull_vao is not None:
+            ctx.enable(moderngl.DEPTH_TEST)
+            ctx.disable(moderngl.CULL_FACE)
+            ctx.disable(moderngl.BLEND)
+            ctx.depth_mask = True
+            prog_boat = self.boat_prog
+            prog_boat["u_vp"].write(vp_bytes)
+            identity = np.identity(4, dtype=np.float32)
+            prog_boat["u_part"].write(upload_mat(identity))
+            for boat in game.boats:
+                item_index = -int(boat.get("item", game.boat_item_id)) - 1
+                item_key = ITEMS[item_index].key if 0 <= item_index < len(ITEMS) else "oak_boat"
+                wood = item_key.removesuffix("_boat")
+                texture = self.boat_textures.get(wood) or self.boat_textures.get("oak")
+                if texture is None:
+                    continue
+                texture.use(0)
+                prog_boat["u_center"].value = (
+                    float(boat["x"]), float(boat["y"]), float(boat["z"]))
+                prog_boat["u_yaw"].value = float(boat.get("yaw", 0.0))
+                prog_boat["u_part"].write(upload_mat(identity))
+                self.boat_hull_vao.render(moderngl.TRIANGLES)
+                # Until a rider/rowing system exists, both paddles rest
+                # diagonally toward the water instead of sticking straight
+                # out to the sides. Keep this pose identical on land and water.
+                down_angle = math.radians(-38.0)
+                c, sn = math.cos(down_angle), math.sin(down_angle)
+                resting_pose = np.identity(4, dtype=np.float64)
+                resting_pose[1,1], resting_pose[1,2] = c, -sn
+                resting_pose[2,1], resting_pose[2,2] = sn, c
+                for paddle_name in ("left_paddle", "right_paddle"):
+                    vao = self.boat_paddle_vaos.get(paddle_name)
+                    base_matrix = self.boat_paddle_matrices.get(paddle_name)
+                    if vao is None or base_matrix is None:
+                        continue
+                    prog_boat["u_part"].write(upload_mat(
+                        (base_matrix @ resting_pose).astype(np.float32)))
+                    vao.render(moderngl.TRIANGLES)
+            ctx.enable(moderngl.CULL_FACE)
+
+        # Boat rendering binds its wood texture to texture unit 0.
+        # Restore the terrain atlas before drawing water with terrain_prog.
+        self.atlas_tex.use(0)
+
         # Translucent water, back to front.
         water = [layers["water"] for layers in reversed(visible)
                  if "water" in layers]
@@ -3764,6 +4154,7 @@ class Renderer:
             self.atlas_tex.use(0)
             ctx.depth_mask = True
             ctx.disable(moderngl.BLEND)
+
 
         # Remote players (simple blocky avatars + screen-space name tags).
         self.remote_labels = []
