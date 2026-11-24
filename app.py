@@ -1807,6 +1807,8 @@ class Game:
             if item.key.endswith("_boat") and not item.key.endswith("_chest_boat")
         }
         self.boat_item_id = - (ITEM_INDEX.get("oak_boat", 0) + 1)
+        self.riding_boat: dict | None = None
+        self.boat_row_phase = 0.0
         self.running = True
         self.captured = False
         self.debug = False
@@ -2755,11 +2757,18 @@ class Game:
             if event.button == 1 and self.break_cool <= 0.0:
                 self.break_block()
             elif event.button == 3 and self.place_cool <= 0.0:
-                held = self.hotbar[self.slot]
-                if held in self.boat_item_ids:
-                    self.place_boat()
+                if self.riding_boat is not None:
+                    self.dismount_boat()
                 else:
-                    self.place_block()
+                    boat_index = self._boat_hit()
+                    if boat_index is not None:
+                        self.board_boat(boat_index)
+                    else:
+                        held = self.hotbar[self.slot]
+                        if held in self.boat_item_ids:
+                            self.place_boat()
+                        else:
+                            self.place_block()
             elif event.button == 2:
                 hit = self.world.raycast(self.player.eye_pos(),
                                          self.player.forward(), MAX_REACH)
@@ -2822,6 +2831,106 @@ class Game:
                 nearest, nearest_t = index, t_min
         return nearest
 
+    def board_boat(self, index: int) -> None:
+        if not (0 <= index < len(self.boats)):
+            return
+        self.riding_boat = self.boats[index]
+        boat = self.riding_boat
+        self.player.vel[:] = 0.0
+        self.player.yaw = float(boat.get("yaw", self.player.yaw))
+        self.player.pitch = 0.0
+        self.player.pos[:] = (float(boat["x"]), float(boat["y"]) - 0.78,
+                              float(boat["z"]))
+        self.toast = "Riding boat - WASD to move, right-click to dismount"
+        self.toast_timer = 2.5
+
+    def dismount_boat(self) -> None:
+        boat = self.riding_boat
+        if boat is None:
+            return
+        yaw = float(boat.get("yaw", self.player.yaw))
+        right = np.array([math.cos(yaw), 0.0, math.sin(yaw)])
+        candidates = (
+            (right, 1.15), (-right, 1.15),
+            (self.player.flat_forward(), 1.25),
+            (-self.player.flat_forward(), 1.25),
+        )
+        placed = False
+        for direction, distance in candidates:
+            x = float(boat["x"] + direction[0] * distance)
+            z = float(boat["z"] + direction[2] * distance)
+            y = float(boat["y"])
+            # On land, stand on the supporting block; over water, leave the
+            # player at the water surface so normal swimming physics resumes.
+            if self.world.get(math.floor(x), math.floor(y) - 1,
+                              math.floor(z)) == WATER:
+                y -= 0.02
+            self.player.pos[:] = (x, y, z)
+            if not self.player.collides():
+                placed = True
+                break
+        if not placed:
+            self.player.pos[:] = (float(boat["x"]), float(boat["y"]), float(boat["z"]))
+        self.player.vel[:] = 0.0
+        self.riding_boat = None
+        self.toast = "Left boat"
+        self.toast_timer = 1.5
+
+    def update_riding_boat(self, dt: float, keys) -> None:
+        boat = self.riding_boat
+        if boat is None:
+            return
+        dt = min(float(dt), 0.05)
+        forward = (1.0 if keys[self.keybinds["forward"]] else 0.0) - (
+            1.0 if keys[self.keybinds["back"]] else 0.0)
+        turn = (1.0 if keys[self.keybinds["right"]] else 0.0) - (
+            1.0 if keys[self.keybinds["left"]] else 0.0)
+        boat["yaw"] = float(boat.get("yaw", 0.0)) + turn * 1.9 * dt
+        x, y, z = float(boat["x"]), float(boat["y"]), float(boat["z"])
+        water = any(
+            self.world.get(math.floor(x + dx), math.floor(y) - 1,
+                           math.floor(z + dz)) == WATER
+            for dx, dz in ((0,0), (0.35,0), (-0.35,0), (0,0.35), (0,-0.35))
+        )
+        speed_limit = 7.0 if water else 2.35
+        target_speed = forward * speed_limit
+        speed = float(boat.get("_speed", 0.0))
+        accel = 9.0 if water else 5.0
+        speed += (target_speed - speed) * min(1.0, accel * dt)
+        boat["_speed"] = speed
+        yaw = float(boat["yaw"])
+        nx = x + math.sin(yaw) * speed * dt
+        nz = z - math.cos(yaw) * speed * dt
+
+        # Stop against solid terrain while allowing the hull to glide over water.
+        blocked = False
+        for dx in (-0.42, 0.0, 0.42):
+            for dz in (-0.42, 0.0, 0.42):
+                for dy in (0.12, 0.34):
+                    block = self.world.get(math.floor(nx + dx),
+                                            math.floor(y + dy),
+                                            math.floor(nz + dz))
+                    if IS_SOLID[block]:
+                        blocked = True
+                        break
+                if blocked:
+                    break
+            if blocked:
+                break
+        if blocked:
+            boat["_speed"] = 0.0
+        else:
+            boat["x"], boat["z"] = nx, nz
+
+        if abs(speed) > 0.25:
+            self.boat_row_phase = (self.boat_row_phase + dt * (8.0 if water else 5.0)) % math.tau
+        self.player.pos[:] = (float(boat["x"]), float(boat["y"]) - 0.78,
+                              float(boat["z"]))
+        self.player.vel[:] = 0.0
+        self.player.yaw = yaw
+        self.player.in_water = False
+        self.player.underwater = False
+
     def place_boat(self) -> None:
         """Place a boat on the first water surface or solid block in view."""
         held = self.hotbar[self.slot]
@@ -2860,7 +2969,10 @@ class Game:
             surface_y = ty + 1
             while surface_y < WY and self.world.get(tx, surface_y, tz) == WATER:
                 surface_y += 1
-            bx, by, bz = tx + 0.5, float(surface_y) - 0.20, tz + 0.5
+            # Keep the hull floor just above the water surface.
+            # The paddles are lowered separately during rendering so they
+            # retain their current water contact.
+            bx, by, bz = tx + 0.5, float(surface_y) + 0.02, tz + 0.5
         else:
             bx, by, bz = tx + 0.5, float(ty + 1), tz + 0.5
 
@@ -2974,7 +3086,10 @@ class Game:
             sprint = bool(keys[self.keybinds["sprint"]])
             descend = sprint if self.player.fly else False
             jump = bool(keys[self.keybinds["jump"]])
-        self.player.update(dt, float(forward), float(strafe), jump, sprint, descend)
+        if self.riding_boat is not None and self.state == "playing":
+            self.update_riding_boat(dt, keys)
+        else:
+            self.player.update(dt, float(forward), float(strafe), jump, sprint, descend)
         self.break_cool = max(0.0, self.break_cool - dt)
         self.place_cool = max(0.0, self.place_cool - dt)
         self.toast_timer = max(0.0, self.toast_timer - dt)
@@ -2982,7 +3097,8 @@ class Game:
             mouse = pygame.mouse.get_pressed()
             if mouse[0] and self.break_cool <= 0.0:
                 self.break_block(cached=True)
-            if mouse[2] and self.place_cool <= 0.0:
+            if (mouse[2] and self.place_cool <= 0.0
+                    and self.riding_boat is None):
                 if self.hotbar[self.slot] in self.boat_item_ids:
                     self.place_boat()
                 else:
@@ -4117,17 +4233,34 @@ class Renderer:
                 prog_boat["u_yaw"].value = float(boat.get("yaw", 0.0))
                 prog_boat["u_part"].write(upload_mat(identity))
                 self.boat_hull_vao.render(moderngl.TRIANGLES)
-                # Keep both paddles resting diagonally toward the water.
-                down_angle = math.radians(-38.0)
-                c, sn = math.cos(down_angle), math.sin(down_angle)
-                resting_pose = np.identity(4, dtype=np.float64)
-                resting_pose[1,1], resting_pose[1,2] = c, -sn
-                resting_pose[2,1], resting_pose[2,2] = sn, c
-                for paddle_name in ("left_paddle", "right_paddle"):
+
+                # On water, lower only the paddles by the same amount the
+                # hull was raised. This preserves their existing waterline.
+                paddle_y = float(boat["y"])
+                water_cell = game.world.get(
+                    math.floor(float(boat["x"])),
+                    math.floor(float(boat["y"]) - 0.05),
+                    math.floor(float(boat["z"])))
+                if water_cell == WATER:
+                    paddle_y -= 0.22
+                prog_boat["u_center"].value = (
+                    float(boat["x"]), paddle_y, float(boat["z"]))
+
+                # Alternate the paddle strokes while this boat is moving.
+                # At rest they keep the same downward water-facing angle.
+                moving = abs(float(boat.get("_speed", 0.0))) > 0.25
+                phase = game.boat_row_phase
+                for paddle_index, paddle_name in enumerate(("left_paddle", "right_paddle")):
                     vao = self.boat_paddle_vaos.get(paddle_name)
                     base_matrix = self.boat_paddle_matrices.get(paddle_name)
                     if vao is None or base_matrix is None:
                         continue
+                    stroke = math.sin(phase + paddle_index * math.pi) * 24.0 if moving else 0.0
+                    down_angle = math.radians(-38.0 + stroke)
+                    c, sn = math.cos(down_angle), math.sin(down_angle)
+                    resting_pose = np.identity(4, dtype=np.float64)
+                    resting_pose[1,1], resting_pose[1,2] = c, -sn
+                    resting_pose[2,1], resting_pose[2,2] = sn, c
                     prog_boat["u_part"].write(upload_mat(
                         (base_matrix @ resting_pose).astype(np.float32)))
                     vao.render(moderngl.TRIANGLES)
