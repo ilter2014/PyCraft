@@ -4074,7 +4074,27 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Minecraft's textured 3D boat entity model, including both animated paddles.
+        # Restore the terrain atlas before drawing water.
+        self.atlas_tex.use(0)
+
+        # Translucent water, back to front.
+        water = [layers["water"] for layers in reversed(visible)
+                 if "water" in layers]
+        if water:
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
+            ctx.depth_mask = False
+            ctx.enable(moderngl.CULL_FACE)
+            prog["u_cutout"].value = 0
+            prog["u_alpha"].value = 1.0
+            for mesh in water:
+                mesh.vao.render(tri, vertices=mesh.count)
+            ctx.depth_mask = True
+            ctx.disable(moderngl.BLEND)
+            prog["u_cutout"].value = 1
+
+        # Draw boats after translucent water so their opaque hull/floor
+        # correctly occludes the water surface inside the boat.
         if game.boats and self.boat_hull_vao is not None:
             ctx.enable(moderngl.DEPTH_TEST)
             ctx.disable(moderngl.CULL_FACE)
@@ -4097,9 +4117,7 @@ class Renderer:
                 prog_boat["u_yaw"].value = float(boat.get("yaw", 0.0))
                 prog_boat["u_part"].write(upload_mat(identity))
                 self.boat_hull_vao.render(moderngl.TRIANGLES)
-                # Until a rider/rowing system exists, both paddles rest
-                # diagonally toward the water instead of sticking straight
-                # out to the sides. Keep this pose identical on land and water.
+                # Keep both paddles resting diagonally toward the water.
                 down_angle = math.radians(-38.0)
                 c, sn = math.cos(down_angle), math.sin(down_angle)
                 resting_pose = np.identity(4, dtype=np.float64)
@@ -4114,26 +4132,7 @@ class Renderer:
                         (base_matrix @ resting_pose).astype(np.float32)))
                     vao.render(moderngl.TRIANGLES)
             ctx.enable(moderngl.CULL_FACE)
-
-        # Boat rendering binds its wood texture to texture unit 0.
-        # Restore the terrain atlas before drawing water with terrain_prog.
-        self.atlas_tex.use(0)
-
-        # Translucent water, back to front.
-        water = [layers["water"] for layers in reversed(visible)
-                 if "water" in layers]
-        if water:
-            ctx.enable(moderngl.BLEND)
-            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
-            ctx.depth_mask = False
-            ctx.enable(moderngl.CULL_FACE)
-            prog["u_cutout"].value = 0
-            prog["u_alpha"].value = 1.0
-            for mesh in water:
-                mesh.vao.render(tri, vertices=mesh.count)
-            ctx.depth_mask = True
-            ctx.disable(moderngl.BLEND)
-            prog["u_cutout"].value = 1
+            self.atlas_tex.use(0)
 
         # Slow, blocky cloud layer high above the world.
         if self.cloud_count:
