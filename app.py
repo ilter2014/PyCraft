@@ -1822,7 +1822,7 @@ class Game:
         self.inv_page = 0
 
         # Multiplayer.
-        self.name = sanitize_name(name or getpass.getuser())
+        self.name = sanitize_name(name if name is not None else getpass.getuser())
         self.net: NetSession | None = net
         self.remote_players: dict[str, RemotePlayer] = {}
         self.remote_labels: list[tuple[str, int, int]] = []
@@ -1849,6 +1849,18 @@ class Game:
         self.create_for_host = False
         self.create_return_state = "world_select"
 
+        # Persistent settings.
+        self.settings_file = ROOT / "settings.json"
+        self.render_distance = 128
+        self.keybinds = {"forward": pygame.K_w, "back": pygame.K_s,
+                         "left": pygame.K_a, "right": pygame.K_d,
+                         "jump": pygame.K_SPACE, "sprint": pygame.K_LSHIFT,
+                         "fly": pygame.K_f, "inventory": pygame.K_e,
+                         "chat": pygame.K_t}
+        self.waiting_for_bind = None
+        self.settings_return_state = "paused"
+        self._load_settings()
+
         # Chat.
         self.chat_open = False
         self.chat_text = ""
@@ -1856,6 +1868,30 @@ class Game:
 
         if self.net is not None:
             self._register_net_peers()
+
+    def _load_settings(self) -> None:
+        try:
+            data = json.loads(self.settings_file.read_text(encoding="utf-8"))
+            self.render_distance = max(48, min(256, int(data.get("render_distance", 128))))
+            for action, key in data.get("keybinds", {}).items():
+                if action in self.keybinds and isinstance(key, int) and 0 <= key < 2147483648:
+                    self.keybinds[action] = key
+        except (OSError, ValueError, TypeError):
+            pass
+
+    def _save_settings(self) -> None:
+        try:
+            data = {"render_distance": self.render_distance, "keybinds": self.keybinds}
+            self.settings_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError as exc:
+            self.toast = f"Settings save failed: {exc}"
+            self.toast_timer = 3.0
+
+    def open_settings(self, return_state: str = "paused") -> None:
+        self.settings_return_state = return_state
+        self.waiting_for_bind = None
+        self.state = "settings"
+        self.set_captured(False)
 
     # -- state --------------------------------------------------------------
 
@@ -2293,8 +2329,32 @@ class Game:
     # -- events -------------------------------------------------------------
 
     def handle_events(self) -> None:
+        # Windows may maximize the SDL window just after the OpenGL context is
+        # created. Its first resize notification is not always VIDEORESIZE, so
+        # synchronize the drawable size directly before processing each frame.
+        try:
+            width, height = pygame.display.get_window_size()
+            if width > 0 and height > 0 and (width, height) != (self.renderer.width, self.renderer.height):
+                self.renderer.width, self.renderer.height = width, height
+                self.renderer.ctx.viewport = (0, 0, width, height)
+        except pygame.error:
+            pass
+
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type in (pygame.VIDEORESIZE, getattr(pygame, "WINDOWSIZECHANGED", -1)):
+                # VIDEORESIZE carries the new client-area dimensions. The OpenGL
+                # display surface can still report its previous size at this point.
+                width = int(getattr(event, "w", 0) or 0)
+                height = int(getattr(event, "h", 0) or 0)
+                if width <= 0 or height <= 0:
+                    try:
+                        width, height = pygame.display.get_window_size()
+                    except pygame.error:
+                        width, height = 0, 0
+                if width > 0 and height > 0:
+                    self.renderer.width, self.renderer.height = width, height
+                    self.renderer.ctx.viewport = (0, 0, width, height)
+            elif event.type == pygame.QUIT:
                 self.save_world(silent=True)
                 self.running = False
             elif event.type == pygame.WINDOWFOCUSLOST and self.state == "playing":
@@ -2320,6 +2380,65 @@ class Game:
     def _key_down(self, event) -> None:
         k = event.key
 
+        if k == pygame.K_F11:
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                user32 = ctypes.windll.user32
+                hwnd = pygame.display.get_wm_info().get("window")
+                if not hwnd:
+                    raise RuntimeError("Pencere tan?t?c?s? al?namad?")
+
+                GWL_STYLE = -16
+                WS_VISIBLE = 0x10000000
+                WS_POPUP = 0x80000000
+                SW_RESTORE = 9
+                SWP_NOOWNERZORDER = 0x0200
+                SWP_FRAMECHANGED = 0x0020
+                SWP_SHOWWINDOW = 0x0040
+
+                if not getattr(self, "fullscreen", False):
+                    rect = wintypes.RECT()
+                    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                        raise ctypes.WinError()
+                    self._windowed_rect = (rect.left, rect.top,
+                                           rect.right - rect.left,
+                                           rect.bottom - rect.top)
+                    self._windowed_style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    user32.SetWindowLongW(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE)
+                    width = user32.GetSystemMetrics(0)
+                    height = user32.GetSystemMetrics(1)
+                    user32.SetWindowPos(hwnd, 0, 0, 0, width, height,
+                                        SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
+                    self.fullscreen = True
+                else:
+                    style = getattr(self, "_windowed_style", None)
+                    rect = getattr(self, "_windowed_rect", None)
+                    if style is not None:
+                        user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                    if rect:
+                        user32.SetWindowPos(hwnd, 0, *rect,
+                                            SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
+                    self.fullscreen = False
+
+                pygame.event.pump()
+                width, height = pygame.display.get_window_size()
+                self.renderer.width, self.renderer.height = max(1, width), max(1, height)
+                self.renderer.ctx.viewport = (0, 0, self.renderer.width, self.renderer.height)
+            except Exception as exc:
+                self.toast = f"Tam ekran hatas?: {exc}"
+                self.toast_timer = 4.0
+            return
+
+        if self.state == "settings" and self.waiting_for_bind:
+            if k != pygame.K_ESCAPE:
+                self.keybinds[self.waiting_for_bind] = k
+                self._save_settings()
+            self.waiting_for_bind = None
+            return
+
         # Chat input captures every key while it is open.
         if self.chat_open:
             if k == pygame.K_ESCAPE:
@@ -2339,6 +2458,9 @@ class Game:
                 self.pause()
             elif self.state == "paused":
                 self.resume()
+            elif self.state == "settings":
+                self.waiting_for_bind = None
+                self.state = self.settings_return_state
             elif self.state == "inventory":
                 self.close_inventory()
             elif self.state == "multiplayer":
@@ -2392,7 +2514,7 @@ class Game:
         if self.state == "multiplayer":
             if self.mp_name_focus:
                 if k == pygame.K_BACKSPACE:
-                    self.name = self.name[:-1] or "Player"
+                    self.name = self.name[:-1]
                 elif k in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self.mp_name_focus = False
                 elif len(self.name) < 16:
@@ -2437,11 +2559,11 @@ class Game:
 
         if self.state != "playing":
             return
-        if k == pygame.K_e:
+        if k == self.keybinds["inventory"]:
             self.open_inventory()
-        elif k == pygame.K_t:
+        elif k == self.keybinds["chat"]:
             self.open_chat()
-        elif k == pygame.K_f:
+        elif k == self.keybinds["fly"]:
             self.player.fly = not self.player.fly
             self.toast = "Fly mode " + ("ON" if self.player.fly else "OFF")
             self.toast_timer = 2.0
@@ -2467,6 +2589,8 @@ class Game:
                 self.state = "multiplayer"
                 self.mp_focus = False
                 self.mp_status = ""
+            elif hit == "title_settings":
+                self.open_settings("menu")
             elif hit == "quit":
                 self.running = False
             return
@@ -2510,8 +2634,7 @@ class Game:
                 worlds = self.list_saved_worlds()
                 if 0 <= index < len(worlds):
                     self.selected_host_world = worlds[index]["path"]
-                    self.mp_status = "Selected world: " + worlds[index]["name"]
-                    self.state = "multiplayer"
+                    self.host_game()
             elif hit == "host_world_back":
                 self.state = "multiplayer"
             elif hit == "host_world_create":
@@ -2555,10 +2678,26 @@ class Game:
                 self.mp_focus = False
                 self.mp_name_focus = False
             return
+        if self.state == "settings":
+            hit = self.renderer.hit_hotspot(pos)
+            if hit == "settings_back":
+                self.waiting_for_bind = None
+                self.state = self.settings_return_state
+            elif hit == "distance_down":
+                self.render_distance = max(48, self.render_distance - 16)
+                self._save_settings()
+            elif hit == "distance_up":
+                self.render_distance = min(256, self.render_distance + 16)
+                self._save_settings()
+            elif hit and hit.startswith("bind:"):
+                self.waiting_for_bind = hit.split(":", 1)[1]
+            return
         if self.state == "paused":
             hit = self.renderer.hit_hotspot(pos)
             if hit == "resume":
                 self.resume()
+            elif hit == "settings":
+                self.open_settings("paused")
             elif hit == "title":
                 self.to_title()
             elif hit == "quit":
@@ -2662,15 +2801,11 @@ class Game:
             forward = strafe = 0
             jump = sprint = descend = False
         else:
-            forward = (1 if keys[pygame.K_w] else 0) - (1 if keys[pygame.K_s] else 0)
-            strafe = (1 if keys[pygame.K_d] else 0) - (1 if keys[pygame.K_a] else 0)
-            if self.player.fly:
-                sprint = bool(keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL])
-                descend = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
-            else:
-                sprint = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
-                descend = False
-            jump = bool(keys[pygame.K_SPACE])
+            forward = (1 if keys[self.keybinds["forward"]] else 0) - (1 if keys[self.keybinds["back"]] else 0)
+            strafe = (1 if keys[self.keybinds["right"]] else 0) - (1 if keys[self.keybinds["left"]] else 0)
+            sprint = bool(keys[self.keybinds["sprint"]])
+            descend = sprint if self.player.fly else False
+            jump = bool(keys[self.keybinds["jump"]])
         self.player.update(dt, float(forward), float(strafe), jump, sprint, descend)
         self.break_cool = max(0.0, self.break_cool - dt)
         self.place_cool = max(0.0, self.place_cool - dt)
@@ -3502,6 +3637,10 @@ class Renderer:
                       self._cull_min[:, None, :])
         dist = (pv * n[None, :, :]).sum(axis=2) + planes[None, :, 3]
         inside = (dist >= 0.0).all(axis=1)
+        max_dist = float(getattr(self, "_active_render_distance", 256))
+        dx = self._cull_ctr[:, 0] - cam[0]
+        dz = self._cull_ctr[:, 1] - cam[2]
+        inside &= (dx * dx + dz * dz) <= max_dist * max_dist
         d = self._cull_ctr - np.array([cam[0], cam[2]])
         d2 = (d * d).sum(axis=1)
         inside &= d2 <= (RENDER_DISTANCE + 32.0) ** 2
@@ -3516,6 +3655,7 @@ class Renderer:
     # -- world rendering ----------------------------------------------------
 
     def draw_world(self, game: "Game") -> None:
+        self._active_render_distance = game.render_distance
         ctx = self.ctx
         world = game.world
         player = game.player
@@ -3786,7 +3926,8 @@ class Renderer:
         by = int(h * 0.50)
         self.draw_button(bx, by, bw, bh, "SINGLEPLAYER", "play")
         self.draw_button(bx, by + bh + 14, bw, bh, "MULTIPLAYER", "multiplayer")
-        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
+        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "SETTINGS", "title_settings")
+        self.draw_button(bx, by + (bh + 14) * 3, bw, bh, "QUIT GAME", "quit")
 
         self.text("WASD MOVE   SPACE JUMP   SHIFT SPRINT   F FLY",
                   w // 2, h - 76, scale=2, align="center",
@@ -3820,7 +3961,10 @@ class Renderer:
                              f"{item['name']}   |   SEED {item['seed']}", f"world:{i}")
             self.draw_button(bx + bw - delete_w, yy, delete_w, bh,
                              "DELETE", f"world_delete:{i}")
-        create_y = min(h - 118, by + max(1, len(visible)) * (bh + 10) + 12)
+        if not visible:
+            create_y = min(h - 118, 318)
+        else:
+            create_y = min(h - 118, by + len(visible) * (bh + 10) + 12)
         self.draw_button(bx, create_y, bw, 50, "CREATE NEW WORLD", "create_world")
         self.draw_button(bx, create_y + 62, bw, 44, "BACK", "world_back")
         if game.world_status:
@@ -3857,9 +4001,8 @@ class Renderer:
                       scale=2, align="center", color=col(220, 220, 220))
         for i, item in enumerate(visible):
             yy = by + i * (bh + 9)
-            marker = "  [SELECTED]" if game.selected_host_world == item["path"] else ""
             self.draw_button(bx, yy, bw, bh,
-                             f"{item['name']}   |   SEED {item['seed']}{marker}",
+                             f"{item['name']}   |   SEED {item['seed']}",
                              f"host_world:{i}")
         bottom = min(h - 112, by + max(1, len(visible)) * (bh + 9) + 12)
         self.draw_button(bx, bottom, bw, 44, "CREATE A WORLD", "host_world_create")
@@ -4082,6 +4225,35 @@ class Renderer:
         if game.debug:
             self.draw_debug(game)
 
+    def draw_settings(self, game: "Game") -> None:
+        w, h = self.width, self.height
+        self.rect_now(0, 0, w, h, col(12, 18, 28, 245))
+        self.text("SETTINGS", w // 2, 42, scale=6, align="center")
+        self.text("RENDER DISTANCE", w // 2, 112, scale=2, align="center")
+        cx = w // 2
+        self.draw_button(cx - 150, 146, 64, 42, "-", "distance_down")
+        self.text(f"{game.render_distance} BLOCKS", cx, 157, scale=3, align="center")
+        self.draw_button(cx + 86, 146, 64, 42, "+", "distance_up")
+        actions = [("forward", "MOVE FORWARD"), ("back", "MOVE BACKWARD"),
+                   ("left", "MOVE LEFT"), ("right", "MOVE RIGHT"),
+                   ("jump", "JUMP"), ("sprint", "SPRINT / FLY DOWN"),
+                   ("fly", "TOGGLE FLY"), ("inventory", "INVENTORY"),
+                   ("chat", "CHAT")]
+        row_h, col_w = 36, min(360, (w - 100) // 2)
+        left_x = (w - (col_w * 2 + 24)) // 2
+        for i, (action, label) in enumerate(actions):
+            ci, ri = i % 2, i // 2
+            x, y = left_x + ci * (col_w + 24), 208 + ri * (row_h + 8)
+            self.text(label, x, y + 10, scale=1, color=col(225, 230, 240))
+            key_name = pygame.key.name(game.keybinds[action]).upper()
+            if game.waiting_for_bind == action:
+                key_name = "PRESS KEY..."
+            self.draw_button(x + col_w - 142, y, 142, row_h, key_name, f"bind:{action}")
+        if game.waiting_for_bind:
+            self.text("Press a key to bind  -  ESC cancels", w // 2, h - 96,
+                      scale=1, align="center", color=col(255, 220, 130))
+        self.draw_button((w - 300) // 2, h - 66, 300, 46, "BACK", "settings_back")
+
     def draw_pause(self, game: "Game") -> None:
         w, h = self.width, self.height
         self.rect(0, 0, w, h, col(0, 0, 0, 155))
@@ -4092,8 +4264,9 @@ class Renderer:
         bx = (w - bw) // 2
         by = int(h * 0.41)
         self.draw_button(bx, by, bw, bh, "BACK TO GAME", "resume")
-        self.draw_button(bx, by + (bh + 14), bw, bh, "QUIT TO TITLE", "title")
-        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT GAME", "quit")
+        self.draw_button(bx, by + (bh + 14), bw, bh, "SETTINGS", "settings")
+        self.draw_button(bx, by + (bh + 14) * 2, bw, bh, "QUIT TO TITLE", "title")
+        self.draw_button(bx, by + (bh + 14) * 3, bw, bh, "QUIT GAME", "quit")
         if game.net is not None:
             role = "HOST" if game.net.is_host else "CLIENT"
             self.text(f"Multiplayer {role}  -  "
@@ -4218,7 +4391,7 @@ class Renderer:
     def draw(self, game: "Game") -> None:
         self.time = time.perf_counter()
         if game.state in ("menu", "multiplayer", "world_select", "create_world",
-                          "delete_world_confirm", "host_world_select"):
+                          "delete_world_confirm", "host_world_select", "settings"):
             self.ctx.viewport = (0, 0, self.width, self.height)
             self.ctx.clear(0.10, 0.16, 0.24, 1.0)
             self._begin_ui()
@@ -4232,8 +4405,10 @@ class Renderer:
                 self.draw_create_world(game)
             elif game.state == "delete_world_confirm":
                 self.draw_delete_world_confirm(game)
-            else:
+            elif game.state == "host_world_select":
                 self.draw_host_world_select(game)
+            else:
+                self.draw_settings(game)
             self._flush_ui()
             return
         self.draw_world(game)
