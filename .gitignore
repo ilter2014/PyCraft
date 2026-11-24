@@ -47,36 +47,3 @@ Hytale_Extra_Ores_Backup*/
 .env
 .env.*
 !.env.example
-
-# Local research sources and generated test artifacts
-_research/
-*_Frames/
-*.mp4
-
-# Local worlds / saves (keep on the developer machine)
-Worlds/
-
-# Root-level screenshots and visual test outputs
-/AzureSkybox_*.png
-/PyCraft_*_Test*.png
-/PyCraft_*_View*.png
-/menu_next.png
-/video_check.jpg
-/water_angle.png
-
-# Local source snapshots
-app_before_*.py
-
-
-# Temporary one-off development scripts
-_patch*.py
-_compare_frames.py
-_find_open_shore.py
-_find_shore.py
-_record_preview.py
-_test_shore_counts.py
-
-# Local-only research and runtime caches
-/_research/
-/__pycache__/
-/AzureSkybox_HorizonFix.png

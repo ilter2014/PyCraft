@@ -80,43 +80,6 @@ BIRCH_TINT = (158, 218, 100)
 SPRUCE_TINT = (105, 170, 80)
 WATER_TINT = (58, 120, 220)
 
-# Water rendering is tuned through Assets/water_settings.json; invalid or
-# missing values fall back safely without preventing the game from starting.
-WATER_SETTINGS_DEFAULTS = {
-    "wave_strength": 0.50,
-    "wave_spacing": 1.50,
-    "wave_speed": 0.85,
-    "wave_count": 6,
-    "shore_fade_distance": 2.0,
-    "foam_amount": 0.30,
-    "detail_strength": 0.58,
-    "roughness": 0.22,
-}
-
-def load_water_settings() -> dict:
-    settings = dict(WATER_SETTINGS_DEFAULTS)
-    path = ASSET_DIR / "water_settings.json"
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            for key, default in WATER_SETTINGS_DEFAULTS.items():
-                value = loaded.get(key, default)
-                if isinstance(value, (int, float)) and math.isfinite(value):
-                    settings[key] = value
-    except (OSError, ValueError, TypeError):
-        pass
-    settings["wave_strength"] = float(np.clip(settings["wave_strength"], 0.0, 1.5))
-    settings["wave_spacing"] = float(np.clip(settings["wave_spacing"], 0.5, 4.0))
-    settings["wave_speed"] = float(np.clip(settings["wave_speed"], 0.1, 2.0))
-    settings["wave_count"] = int(np.clip(round(settings["wave_count"]), 1, 8))
-    settings["shore_fade_distance"] = float(np.clip(settings["shore_fade_distance"], 0.5, 8.0))
-    settings["foam_amount"] = float(np.clip(settings["foam_amount"], 0.0, 1.0))
-    settings["detail_strength"] = float(np.clip(settings["detail_strength"], 0.0, 2.0))
-    settings["roughness"] = float(np.clip(settings["roughness"], 0.02, 1.0))
-    return settings
-
-WATER_SETTINGS = load_water_settings()
-
 SKY_TOP = (0.30, 0.55, 0.92)
 SKY_HORIZON = (0.76, 0.87, 0.98)
 SUN_DIR = np.array([0.45, 0.62, -0.65], dtype=np.float32)
@@ -648,7 +611,6 @@ IS_SOLID = np.array([b.solid for b in BLOCKS], dtype=bool)
 IS_CUBE = np.array([b.kind == "cube" for b in BLOCKS], dtype=bool)
 IS_PLANT = np.array([b.kind == "plant" for b in BLOCKS], dtype=bool)
 IS_WATER = np.array([b.kind == "water" for b in BLOCKS], dtype=bool)
-IS_LEAF = np.array(["leaves" in b.key for b in BLOCKS], dtype=bool)
 
 ATLAS_IMAGE, TILE_UVS = TEX.pack()
 PLACEABLE = [i for i in range(1, N_BLOCKS) if BLOCKS[i].kind in ("cube", "plant", "water")]
@@ -722,100 +684,14 @@ class GpuMesh:
 
 def _quads(pw: np.ndarray, quad: np.ndarray, tile_uv: np.ndarray,
            shade) -> np.ndarray:
-    """Build (n*4, 7) float32 vertices: xyz, uv, shade and local flex."""
+    """Build (n*4, 6) float32 vertices: xyz, uv, shade for n quads."""
     n = pw.shape[0]
-    out = np.empty((n, 4, 7), dtype=np.float32)
+    out = np.empty((n, 4, 6), dtype=np.float32)
     out[:, :, 0:3] = pw[:, None, :] + quad[None, :, :]
     out[:, :, 3] = tile_uv[:, [0, 2, 2, 0]]
     out[:, :, 4] = tile_uv[:, [1, 1, 3, 3]]
     out[:, :, 5] = shade
-    out[:, :, 6] = quad[None, :, 1]
-    return out.reshape(-1, 7)
-
-
-def _water_top_quads(pw: np.ndarray, tile_uv: np.ndarray, shade, segments: int = 6, shore_distance=None) -> np.ndarray:
-    """Subdivide each water top into a grid for real geometric wave motion."""
-    parts = []
-    n = len(pw)
-    if not n:
-        return np.zeros((0, 7), dtype=np.float32)
-    for iz in range(segments):
-        for ix in range(segments):
-            x0, x1 = ix / segments, (ix + 1) / segments
-            z0, z1 = iz / segments, (iz + 1) / segments
-            q = np.array([[x0, 1, z1], [x1, 1, z1], [x1, 1, z0], [x0, 1, z0]], dtype=np.float32)
-            verts = _quads(pw, q, tile_uv, shade).reshape(n, 4, 7)
-            uv0 = tile_uv[:, :2]; uv1 = tile_uv[:, 2:]
-            uv = np.stack((uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1,
-                           uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0), axis=1)
-            # Preserve a continuous atlas mapping across the subdivided surface.
-            verts[:, :, 3] = np.stack((uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0, uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1,
-                                       uv0[:,0] + (uv1[:,0]-uv0[:,0])*x1, uv0[:,0] + (uv1[:,0]-uv0[:,0])*x0), axis=1)
-            verts[:, :, 4] = np.stack((uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z1,
-                                       uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0, uv0[:,1] + (uv1[:,1]-uv0[:,1])*z0), axis=1)
-            if shore_distance is not None:
-                vx = pw[:, 0, None] + np.array([x0, x1, x1, x0], dtype=np.float32)[None, :]
-                vz = pw[:, 2, None] + np.array([z1, z1, z0, z0], dtype=np.float32)[None, :]
-                gx_i = np.clip(np.floor(vx).astype(np.int32), 0, WX - 2)
-                gz_i = np.clip(np.floor(vz).astype(np.int32), 0, WZ - 2)
-                fx = vx - gx_i
-                fz = vz - gz_i
-                d00 = shore_distance[gx_i, gz_i]
-                d10 = shore_distance[gx_i + 1, gz_i]
-                d01 = shore_distance[gx_i, gz_i + 1]
-                d11 = shore_distance[gx_i + 1, gz_i + 1]
-                d0 = d00 * (1.0 - fx) + d10 * fx
-                d1 = d01 * (1.0 - fx) + d11 * fx
-                dist = d0 * (1.0 - fz) + d1 * fz
-                fade = np.clip((dist - 0.25) / max(WATER_SETTINGS["shore_fade_distance"], 0.25), 0.0, 1.0)
-                verts[:, :, 6] = fade * fade * (3.0 - 2.0 * fade)
-            parts.append(verts.reshape(-1, 7))
-    return np.concatenate(parts, axis=0)
-
-
-def _shore_wash_quads(sand_pos: np.ndarray, tile_uv: np.ndarray, shade,
-                      water_dx: int, water_dz: int, segments: int = 6) -> np.ndarray:
-    """Thin, subdivided swash sheet over the first sand block at the waterline.
-    flex stores normalized distance from the sea edge for the shore shader."""
-    if len(sand_pos) == 0:
-        return np.zeros((0, 7), dtype=np.float32)
-    parts = []
-    for i in range(segments):
-        d0, d1 = i / segments, (i + 1) / segments
-        verts = np.empty((len(sand_pos), 4, 7), dtype=np.float32)
-        x0 = np.zeros(len(sand_pos), dtype=np.float32)
-        x1 = np.ones(len(sand_pos), dtype=np.float32)
-        z0 = np.zeros(len(sand_pos), dtype=np.float32)
-        z1 = np.ones(len(sand_pos), dtype=np.float32)
-        if water_dx:
-            edge = 0.0 if water_dx < 0 else 1.0
-            inward = -float(water_dx)
-            x0[:] = edge + inward * d0
-            x1[:] = edge + inward * d1
-        else:
-            edge = 0.0 if water_dz < 0 else 1.0
-            inward = -float(water_dz)
-            z0[:] = edge + inward * d0
-            z1[:] = edge + inward * d1
-        # Upward-facing top quad winding.
-        coords = np.stack((
-            np.stack((x0, np.ones_like(x0), z1), axis=1),
-            np.stack((x1, np.ones_like(x1), z1), axis=1),
-            np.stack((x1, np.ones_like(x1), z0), axis=1),
-            np.stack((x0, np.ones_like(x0), z0), axis=1),
-        ), axis=1)
-        coords[:, :, 1] += 0.012
-        verts[:, :, :3] = sand_pos[:, None, :] + coords
-        uv0, uv1 = tile_uv[:, :2], tile_uv[:, 2:]
-        verts[:, :, 3] = np.stack((uv0[:, 0], uv1[:, 0], uv1[:, 0], uv0[:, 0]), axis=1)
-        verts[:, :, 4] = np.stack((uv1[:, 1], uv1[:, 1], uv0[:, 1], uv0[:, 1]), axis=1)
-        verts[:, :, 5] = shade
-        if water_dx:
-            verts[:, :, 6] = np.array([d0, d1, d1, d0], dtype=np.float32)[None, :]
-        else:
-            verts[:, :, 6] = np.array([d1, d1, d0, d0], dtype=np.float32)[None, :]
-        parts.append(verts.reshape(-1, 7))
-    return np.concatenate(parts, axis=0)
+    return out.reshape(-1, 6)
 
 
 class World:
@@ -823,7 +699,6 @@ class World:
         self.seed = seed
         self.blocks = np.zeros((WX, WY, WZ), dtype=np.uint16)
         self.heights = np.zeros((WX, WZ), dtype=np.int16)
-        self.shore_distance = None
         self.spawn = (WX // 2 + 0.5, 64.0, WZ // 2 + 0.5)
         self.spawn_yaw = math.radians(35.0)
         self.spawn_pitch = math.radians(-8.0)
@@ -860,7 +735,6 @@ class World:
         heights -= river * 13.0
         heights = np.clip(heights, 4, WY - 20).astype(np.int16)
         self.heights = heights
-        self.shore_distance = None
 
         world = self.blocks
         world.fill(AIR)
@@ -1224,17 +1098,15 @@ class World:
         region = self._region(cx, cz, yh)
         src = region[1:17, 1:1 + yh, 1:17]
         ox, oz = cx * CHUNK, cz * CHUNK
-        cube_parts, foliage_parts, water_parts, water_surface_parts, plant_parts, falling_leaf_parts, shore_parts = [], [], [], [], [], [], []
+        cube_parts, water_parts, plant_parts = [], [], []
         face_total = 0
 
-        cube_src = IS_CUBE[src] & ~IS_LEAF[src]
-        foliage_src = IS_LEAF[src]
+        cube_src = IS_CUBE[src]
         water_src = IS_WATER[src]
         for di, (dx, dy, dz) in enumerate(DIRS):
             nb = region[1 + dx:17 + dx, 1 + dy:1 + yh + dy, 1 + dz:17 + dz]
             free = ~IS_OPAQUE[nb] & (nb != src)
-            for src_mask, parts in ((cube_src, cube_parts), (foliage_src, foliage_parts),
-                                    (water_src, water_parts)):
+            for src_mask, parts in ((cube_src, cube_parts), (water_src, water_parts)):
                 mask = src_mask & free
                 pos = np.argwhere(mask)
                 n = pos.shape[0]
@@ -1244,45 +1116,9 @@ class World:
                 pw[:, 0] += ox
                 pw[:, 2] += oz
                 tiles = FACE_TILE[di][src[mask]]
-                if src_mask is water_src and di == 3:
-                    # Fade wave energy over the final two water blocks before land.
-                    # The sea plane itself stays at the full one-block water height.
-                    if self.shore_distance is None:
-                        land = self.heights >= SEA_LEVEL
-                        field = np.full(self.heights.shape, 99.0, dtype=np.float32)
-                        for ddx in range(-4, 5):
-                            for ddz in range(-4, 5):
-                                x0, x1 = max(0, -ddx), min(WX, WX - ddx)
-                                z0, z1 = max(0, -ddz), min(WZ, WZ - ddz)
-                                if x0 >= x1 or z0 >= z1:
-                                    continue
-                                shifted = land[x0 + ddx:x1 + ddx, z0 + ddz:z1 + ddz]
-                                target = field[x0:x1, z0:z1]
-                                target[shifted] = np.minimum(target[shifted], math.hypot(ddx, ddz))
-                        self.shore_distance = field
-                    water_surface_parts.append(
-                        _water_top_quads(pw, TILE_UVS[tiles], FACE_SHADE[di],
-                                         segments=6, shore_distance=self.shore_distance))
-                    face_total += n * 36
-                else:
-                    parts.append(_quads(pw, CORNERS[di], TILE_UVS[tiles], FACE_SHADE[di]))
-                    face_total += n
-
-        # Sparse individual leaflets detach from the canopy and drift down.
-        leaf_pos = np.argwhere(foliage_src)
-        if leaf_pos.size:
-            code = (leaf_pos[:, 0] * 73856093 + leaf_pos[:, 1] * 19349663 + leaf_pos[:, 2] * 83492791) % 127
-            chosen = leaf_pos[code == 0]
-            if len(chosen):
-                fp = chosen.astype(np.float32)
-                fp[:, 0] += ox; fp[:, 2] += oz
-                fuv = TILE_UVS[FACE_TILE[1][src[chosen[:, 0], chosen[:, 1], chosen[:, 2]]]]
-                leaflet = np.array([[0.30, 0.48, 0.50], [0.50, 0.48, 0.32],
-                                    [0.70, 0.48, 0.50], [0.50, 0.48, 0.68]], dtype=np.float32)
-                fv = _quads(fp, leaflet, fuv, 0.95)
-                phases = ((chosen[:, 0] * 0.173 + chosen[:, 1] * 0.317 + chosen[:, 2] * 0.119) % 1.0).astype(np.float32)
-                fv[:, 6] = np.repeat(phases, 4)
-                falling_leaf_parts.append(fv)
+                parts.append(_quads(pw, CORNERS[di], TILE_UVS[tiles],
+                                    FACE_SHADE[di]))
+                face_total += n
 
         plant_mask = IS_PLANT[src]
         plant_pos = np.argwhere(plant_mask)
@@ -1301,10 +1137,8 @@ class World:
                 return np.zeros((0, 6), dtype=np.float32)
             return parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
 
-        return ({"cube": cat(cube_parts), "foliage": cat(foliage_parts),
-                 "water": cat(water_parts), "water_surface": cat(water_surface_parts), "plant": cat(plant_parts),
-                 "leaf_fall": cat(falling_leaf_parts), "shore": cat(shore_parts)},
-                face_total, ymax)
+        return ({"cube": cat(cube_parts), "water": cat(water_parts),
+                 "plant": cat(plant_parts)}, face_total, ymax)
 
     def upload_chunk(self, renderer, cx: int, cz: int, precomputed=None) -> None:
         old = self.meshes.pop((cx, cz), None)
@@ -1498,7 +1332,7 @@ class Player:
 
 def sanitize_name(name: str) -> str:
     clean = "".join(ch for ch in str(name) if ch.isprintable()).strip()
-    return clean[:16]
+    return (clean or "Player")[:16]
 
 
 def read_local_skin_b64() -> str:
@@ -1979,8 +1813,6 @@ class Game:
         self.toast = ""
         self.toast_timer = 0.0
         self.auto_screenshot = None
-        self.auto_record = None
-        self.record_seconds = 10
         self.auto_scene = scene
         self.frame_count = 0
         self.last_time = time.perf_counter()
@@ -1990,7 +1822,7 @@ class Game:
         self.inv_page = 0
 
         # Multiplayer.
-        self.name = sanitize_name(getpass.getuser() if name is None else name)
+        self.name = sanitize_name(name or getpass.getuser())
         self.net: NetSession | None = net
         self.remote_players: dict[str, RemotePlayer] = {}
         self.remote_labels: list[tuple[str, int, int]] = []
@@ -2092,7 +1924,7 @@ class Game:
 
     def host_game(self) -> None:
         if self.selected_host_world is None:
-            self.state = "host_world_select"
+            self.mp_status = "Select a saved world before hosting"
             return
         if not self.open_saved_world(self.selected_host_world):
             self.mp_status = self.world_status or "Could not open selected world"
@@ -2365,13 +2197,10 @@ class Game:
         self.save_world(silent=True)
         self.toast = f"Created {name}"
         self.toast_timer = 3.0
-        if self.create_return_state == "host_world_select":
+        if self.create_for_host:
+            self.create_for_host = False
             self.selected_host_world = path
-            self.state = "host_world_select"
-            self.set_captured(False)
-            self.toast = "World created. Select it to host."
-            self.toast_timer = 4.0
-            return
+            self.host_game()
 
     def open_saved_world(self, path: Path) -> bool:
         try:
@@ -2464,32 +2293,8 @@ class Game:
     # -- events -------------------------------------------------------------
 
     def handle_events(self) -> None:
-        # Windows may maximize the SDL window just after the OpenGL context is
-        # created. Its first resize notification is not always VIDEORESIZE, so
-        # synchronize the drawable size directly before processing each frame.
-        try:
-            width, height = pygame.display.get_window_size()
-            if width > 0 and height > 0 and (width, height) != (self.renderer.width, self.renderer.height):
-                self.renderer.width, self.renderer.height = width, height
-                self.renderer.ctx.viewport = (0, 0, width, height)
-        except pygame.error:
-            pass
-
         for event in pygame.event.get():
-            if event.type in (pygame.VIDEORESIZE, getattr(pygame, "WINDOWSIZECHANGED", -1)):
-                # VIDEORESIZE carries the new client-area dimensions. The OpenGL
-                # display surface can still report its previous size at this point.
-                width = int(getattr(event, "w", 0) or 0)
-                height = int(getattr(event, "h", 0) or 0)
-                if width <= 0 or height <= 0:
-                    try:
-                        width, height = pygame.display.get_window_size()
-                    except pygame.error:
-                        width, height = 0, 0
-                if width > 0 and height > 0:
-                    self.renderer.width, self.renderer.height = width, height
-                    self.renderer.ctx.viewport = (0, 0, width, height)
-            elif event.type == pygame.QUIT:
+            if event.type == pygame.QUIT:
                 self.save_world(silent=True)
                 self.running = False
             elif event.type == pygame.WINDOWFOCUSLOST and self.state == "playing":
@@ -2514,58 +2319,6 @@ class Game:
 
     def _key_down(self, event) -> None:
         k = event.key
-
-        if k == pygame.K_F11:
-            try:
-                import ctypes
-                from ctypes import wintypes
-
-                user32 = ctypes.windll.user32
-                hwnd = pygame.display.get_wm_info().get("window")
-                if not hwnd:
-                    raise RuntimeError("Pencere tan?t?c?s? al?namad?")
-
-                GWL_STYLE = -16
-                WS_VISIBLE = 0x10000000
-                WS_POPUP = 0x80000000
-                SW_RESTORE = 9
-                SWP_NOOWNERZORDER = 0x0200
-                SWP_FRAMECHANGED = 0x0020
-                SWP_SHOWWINDOW = 0x0040
-
-                if not getattr(self, "fullscreen", False):
-                    rect = wintypes.RECT()
-                    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-                        raise ctypes.WinError()
-                    self._windowed_rect = (rect.left, rect.top,
-                                           rect.right - rect.left,
-                                           rect.bottom - rect.top)
-                    self._windowed_style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-                    user32.SetWindowLongW(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE)
-                    width = user32.GetSystemMetrics(0)
-                    height = user32.GetSystemMetrics(1)
-                    user32.SetWindowPos(hwnd, 0, 0, 0, width, height,
-                                        SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
-                    self.fullscreen = True
-                else:
-                    style = getattr(self, "_windowed_style", None)
-                    rect = getattr(self, "_windowed_rect", None)
-                    if style is not None:
-                        user32.SetWindowLongW(hwnd, GWL_STYLE, style)
-                    user32.ShowWindow(hwnd, SW_RESTORE)
-                    if rect:
-                        user32.SetWindowPos(hwnd, 0, *rect,
-                                            SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOOWNERZORDER)
-                    self.fullscreen = False
-
-                pygame.event.pump()
-                width, height = pygame.display.get_window_size()
-                self.renderer.width, self.renderer.height = max(1, width), max(1, height)
-                self.renderer.ctx.viewport = (0, 0, self.renderer.width, self.renderer.height)
-            except Exception as exc:
-                self.toast = f"Tam ekran hatas?: {exc}"
-                self.toast_timer = 4.0
-            return
 
         # Chat input captures every key while it is open.
         if self.chat_open:
@@ -2639,7 +2392,7 @@ class Game:
         if self.state == "multiplayer":
             if self.mp_name_focus:
                 if k == pygame.K_BACKSPACE:
-                    self.name = self.name[:-1]
+                    self.name = self.name[:-1] or "Player"
                 elif k in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     self.mp_name_focus = False
                 elif len(self.name) < 16:
@@ -2757,12 +2510,12 @@ class Game:
                 worlds = self.list_saved_worlds()
                 if 0 <= index < len(worlds):
                     self.selected_host_world = worlds[index]["path"]
-                    self.mp_status = ""
-                    self.host_game()
+                    self.mp_status = "Selected world: " + worlds[index]["name"]
+                    self.state = "multiplayer"
             elif hit == "host_world_back":
                 self.state = "multiplayer"
             elif hit == "host_world_create":
-                self.create_for_host = False
+                self.create_for_host = True
                 self.create_return_state = "host_world_select"
                 self.world_name_input = "My World"
                 self.world_seed_input = ""
@@ -2785,8 +2538,8 @@ class Game:
         if self.state == "multiplayer":
             hit = self.renderer.hit_hotspot(pos)
             if hit == "host":
-                self.mp_status = ""
                 self.state = "host_world_select"
+                self.mp_status = "Choose which saved world to host"
             elif hit == "join":
                 self.join_game()
             elif hit == "back":
@@ -2950,28 +2703,6 @@ class Game:
         pygame.display.flip()
 
     def run(self) -> None:
-        if self.auto_record:
-            scene = {"world": "playing", "pause": "paused"}.get(
-                self.auto_scene, self.auto_scene)
-            self.state = scene
-            self.set_captured(False)
-            self.toast_timer = 0.0
-            frame_dir = Path(self.auto_record)
-            frame_dir.mkdir(parents=True, exist_ok=True)
-            fps = 30
-            total = max(1, int(self.record_seconds * fps))
-            frame_step = 1.0 / fps
-            for i in range(total):
-                frame_start = time.perf_counter()
-                self.renderer.draw(self)
-                self.renderer.save_screenshot(str(frame_dir / f"frame_{i:05d}.png"))
-                pygame.display.flip()
-                pygame.event.pump()
-                time.sleep(max(0.0, frame_step - (time.perf_counter() - frame_start)))
-            print(f"recorded {total} frames to {frame_dir}")
-            self.running = False
-            return
-
         if self.auto_screenshot:
             scene = {"world": "playing", "pause": "paused"}.get(
                 self.auto_scene, self.auto_scene)
@@ -3068,7 +2799,31 @@ void main() {
 }
 """
 
-
+SKY_FS = """
+#version 330
+uniform vec3 u_forward;
+uniform vec3 u_right;
+uniform vec3 u_up;
+uniform vec2 u_tan;
+uniform vec3 u_sun;
+uniform vec3 u_top;
+uniform vec3 u_horizon;
+in vec2 v_ndc;
+out vec4 frag;
+void main() {
+    vec3 dir = normalize(u_forward + u_right * (v_ndc.x * u_tan.x)
+                         + u_up * (v_ndc.y * u_tan.y));
+    float h = clamp(dir.y, -1.0, 1.0);
+    vec3 col = mix(u_horizon, u_top, pow(clamp(h, 0.0, 1.0), 0.55));
+    if (h < 0.0) {
+        col = mix(u_horizon, vec3(0.42, 0.55, 0.66), clamp(-h * 2.2, 0.0, 1.0));
+    }
+    float sd = max(dot(dir, u_sun), 0.0);
+    col += vec3(1.0, 0.94, 0.75) * pow(sd, 900.0) * 1.6;
+    col += vec3(1.0, 0.84, 0.58) * pow(sd, 24.0) * 0.12;
+    frag = vec4(col, 1.0);
+}
+"""
 
 LINE_VS = """
 #version 330
@@ -3245,42 +3000,10 @@ class Renderer:
         self.height = height
         self.window = pygame.display.get_surface()
 
-        # Shader files are editable independently; embedded GLSL remains a safe fallback.
-        shader_dir = ASSET_DIR / "shaders"
-        def shader_source(filename: str, fallback: str) -> str:
-            path = shader_dir / filename
-            try:
-                return path.read_text(encoding="utf-8")
-            except OSError:
-                return fallback
-
-        self.terrain_prog = ctx.program(
-            vertex_shader=shader_source("terrain.vert", TERRAIN_VS),
-            fragment_shader=shader_source("terrain.frag", TERRAIN_FS))
-
-        # Use Azure Water's original fragment shader directly from the research
-        # project. Its vertex input is adapted only to PyCraft's world-space
-        # block mesh and per-vertex shoreline fade attribute.
-        azure_shader_dir = ROOT / "Assets" / "shaders"
-        azure_water_vs = (azure_shader_dir / "water.vert").read_text(encoding="utf-8")
-        azure_water_fs = (azure_shader_dir / "water.frag").read_text(encoding="utf-8")
-        azure_water_vs = azure_water_vs.replace(
-            "in vec2 in_pos;", "in vec3 in_pos;\nin float in_flex;")
-        azure_water_vs = azure_water_vs.replace(
-            "uniform vec2 u_center;", "")
-        azure_water_vs = azure_water_vs.replace(
-            "vec2 xz = in_pos + u_center;", "vec2 xz = in_pos.xz;")
-        azure_water_vs = azure_water_vs.replace(
-            "vec3 P = vec3(xz.x, 0.0, xz.y);", "vec3 P = in_pos;")
-        azure_water_vs = azure_water_vs.replace(
-            "float Aeff = A * lod;", "float Aeff = A * lod * clamp(in_flex, 0.0, 1.0);")
-        self.azure_water_prog = ctx.program(vertex_shader=azure_water_vs,
-                                            fragment_shader=azure_water_fs)
-        self.azure_water_vaos = {}
-        azure_sky_fs = (ROOT / "Assets" / "shaders" / "sky.frag").read_text(encoding="utf-8")
-        self.sky_prog = ctx.program(
-            vertex_shader=shader_source("sky.vert", SKY_VS),
-            fragment_shader=azure_sky_fs)
+        self.terrain_prog = ctx.program(vertex_shader=TERRAIN_VS,
+                                        fragment_shader=TERRAIN_FS)
+        self.sky_prog = ctx.program(vertex_shader=SKY_VS,
+                                    fragment_shader=SKY_FS)
         self.line_prog = ctx.program(vertex_shader=LINE_VS,
                                      fragment_shader=LINE_FS)
         self.ui_prog = ctx.program(vertex_shader=UI_VS,
@@ -3296,21 +3019,6 @@ class Renderer:
                                       dtype="f4").tobytes())
         self.sky_vao = ctx.vertex_array(self.sky_prog,
                                         [(sky_vbo, "2f", "in_pos")])
-
-        # Azure Water integration: a screen-color copy for refraction and a
-        # mirrored procedural-sky pass for projective planar reflections.
-        # Keep these targets independent from the voxel world's depth buffer.
-        rw, rh = max(2, width // 2), max(2, height // 2)
-        self.water_scene_tex = ctx.texture((width, height), 4, dtype="f2")
-        self.water_scene_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.water_scene_depth = ctx.depth_texture((width, height))
-        self.water_scene_depth.filter = (moderngl.NEAREST, moderngl.NEAREST)
-        self.water_scene_fbo = ctx.framebuffer(
-            color_attachments=[self.water_scene_tex],
-            depth_attachment=self.water_scene_depth)
-        self.water_refl_tex = ctx.texture((rw, rh), 4, dtype="f2")
-        self.water_refl_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.water_refl_fbo = ctx.framebuffer(color_attachments=[self.water_refl_tex])
 
         # Block selection wireframe (unit cube).
         edges = []
@@ -3346,7 +3054,8 @@ class Renderer:
         self.atlas_tex = self._upload_texture(ATLAS_IMAGE, repeat=False,
                                               linear=False, kind="atlas")
         self.font_tex, self.glyphs = self._load_font()
-        self.cloud_vao, self.cloud_tex, self.cloud_count = None, None, 0
+        self.cloud_vao, self.cloud_tex, self.cloud_count = \
+            self._make_cloud_layer()
         self.panorama_tex = None
         self.title_tex = None
         self.title_size = (1024, 256)
@@ -3408,7 +3117,6 @@ class Renderer:
 
         self.hotspots: dict[str, pygame.Rect] = {}
         self.inventory_cells: list[tuple[pygame.Rect, int]] = []
-        self.start_time = time.perf_counter()
         self.time = 0.0
 
         # Frustum-culling cache (rebuilt only when chunk meshes change).
@@ -3509,16 +3217,13 @@ class Renderer:
         vbo = self.ctx.buffer(np.ascontiguousarray(verts, dtype="f4").tobytes())
         vao = self.ctx.vertex_array(
             self.terrain_prog,
-            [(vbo, "3f 2f 1f 1f", "in_pos", "in_uv", "in_shade", "in_flex")],
+            [(vbo, "3f 2f 1f", "in_pos", "in_uv", "in_shade")],
             index_buffer=self.quad_ibo)
         return GpuMesh(vao, vbo, quads * 6)
 
     def release_chunk(self, meshes: dict[str, GpuMesh]) -> None:
         for mesh in meshes.values():
             try:
-                azure_vao = self.azure_water_vaos.pop(id(mesh), None)
-                if azure_vao is not None:
-                    azure_vao.release()
                 mesh.vao.release()
                 mesh.vbo.release()
             except Exception:
@@ -3810,32 +3515,6 @@ class Renderer:
 
     # -- world rendering ----------------------------------------------------
 
-    # -- world rendering ----------------------------------------------------
-
-    def _set_azure_sky_uniforms(self, forward, right, up, tan_x, tan_y, reflected=False):
-        """Use Azure Water's procedural sky in both the camera and water reflection passes."""
-        if reflected:
-            forward = np.array([forward[0], -forward[1], forward[2]], dtype=np.float32)
-            up = np.array([up[0], -up[1], up[2]], dtype=np.float32)
-            sun = np.array([SUN_DIR[0], -SUN_DIR[1], SUN_DIR[2]], dtype=np.float32)
-        else:
-            sun = np.asarray(SUN_DIR, dtype=np.float32)
-        p = self.sky_prog
-        p["u_forward"].value = tuple(float(v) for v in forward)
-        p["u_right"].value = tuple(float(v) for v in right)
-        p["u_up"].value = tuple(float(v) for v in up)
-        p["u_tan"].value = (float(tan_x), float(tan_y))
-        p["u_sun_dir"].value = tuple(float(v) for v in sun)
-        p["u_sun_color"].value = (1.0, 0.93, 0.83)
-        p["u_sun_intensity"].value = 3.2
-        p["u_disc_bright"].value = 20.0
-        p["u_zenith"].value = (0.135, 0.30, 0.72)
-        p["u_horizon"].value = (0.70, 0.82, 0.96)
-        p["u_haze"].value = (0.78, 0.86, 1.00)
-        p["u_cloud_offset"].value = (float(self.time * 0.00105), float(self.time * 0.00066))
-        p["u_cloud_coverage"].value = 0.62
-        p["u_cloud_scale"].value = 0.00035
-
     def draw_world(self, game: "Game") -> None:
         ctx = self.ctx
         world = game.world
@@ -3865,7 +3544,13 @@ class Renderer:
         ctx.depth_mask = False
         ctx.disable(moderngl.CULL_FACE)
         ctx.disable(moderngl.BLEND)
-        self._set_azure_sky_uniforms(forward, right, up, tan_x, tan_y, reflected=False)
+        self.sky_prog["u_forward"].value = tuple(float(v) for v in forward)
+        self.sky_prog["u_right"].value = tuple(float(v) for v in right)
+        self.sky_prog["u_up"].value = tuple(float(v) for v in up)
+        self.sky_prog["u_tan"].value = (float(tan_x), float(tan_y))
+        self.sky_prog["u_sun"].value = tuple(float(v) for v in SUN_DIR)
+        self.sky_prog["u_top"].value = SKY_TOP
+        self.sky_prog["u_horizon"].value = SKY_HORIZON
         self.sky_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # Terrain.
@@ -3875,9 +3560,6 @@ class Renderer:
         prog = self.terrain_prog
         prog["u_vp"].write(vp_bytes)
         prog["u_cam"].value = tuple(float(v) for v in cam)
-        prog["u_sun_dir"].value = tuple(float(v) for v in SUN_DIR)
-        prog["u_wind_dir"].value = (0.78, 0.62)
-        prog["u_time"].value = float(self.time)
         if player.underwater:
             prog["u_fog"].value = (0.045, 0.16, 0.28)
             prog["u_fog_range"].value = (3.0, 34.0)
@@ -3894,38 +3576,12 @@ class Renderer:
         visible = self.visible_chunks(world, vp, cam)   # nearest first
         game.drawn_chunks = len(visible)
 
-        # Opaque terrain, front to back (best early-Z rejection).
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 0
+        # Opaque cubes, front to back (best early-Z rejection).
         for layers in visible:
             mesh = layers.get("cube")
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Leaf canopy and small plants move gently with the wind.
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 1
-        for layers in visible:
-            mesh = layers.get("foliage")
-            if mesh:
-                mesh.vao.render(tri, vertices=mesh.count)
-        # Individual leaflets detach and flutter down independently.
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 3
-        ctx.enable(moderngl.BLEND)
-        ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
-        ctx.depth_mask = False
-        # Falling leaves are a near-field detail: avoid transparent particle
-        # batches and vertex animation on distant chunks.
-        for layers in visible[:6]:
-            mesh = layers.get("leaf_fall")
-            if mesh:
-                mesh.vao.render(tri, vertices=mesh.count)
-        ctx.depth_mask = True
-        ctx.disable(moderngl.BLEND)
-        # Flowers, grass and thin stems flex from their rooted bases.
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 1
         # Cutout plants (two crossed quads, no back-face culling).
         ctx.disable(moderngl.CULL_FACE)
         for layers in visible:
@@ -3933,122 +3589,41 @@ class Renderer:
             if mesh:
                 mesh.vao.render(tri, vertices=mesh.count)
 
-        # Water block sides retain the voxel material; only the top surface
-        # is rendered by Azure Water's original Gerstner/reflection shader.
-        water_sides = [layers["water"] for layers in reversed(visible)
-                       if "water" in layers]
-        water_surfaces = [layers["water_surface"] for layers in reversed(visible)
-                          if "water_surface" in layers]
-        if water_sides:
-            prog["u_anim_mode"].value = 0
-            prog["u_cutout"].value = 0
-            prog["u_alpha"].value = 0.72
+        # Translucent water, back to front.
+        water = [layers["water"] for layers in reversed(visible)
+                 if "water" in layers]
+        if water:
             ctx.enable(moderngl.BLEND)
             ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
             ctx.depth_mask = False
-            for mesh in water_sides:
+            ctx.enable(moderngl.CULL_FACE)
+            prog["u_cutout"].value = 0
+            prog["u_alpha"].value = 1.0
+            for mesh in water:
                 mesh.vao.render(tri, vertices=mesh.count)
             ctx.depth_mask = True
             ctx.disable(moderngl.BLEND)
             prog["u_cutout"].value = 1
+
+        # Slow, blocky cloud layer high above the world.
+        if self.cloud_count:
+            self.cloud_tex.use(0)
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
+            ctx.depth_mask = False
+            ctx.disable(moderngl.CULL_FACE)
+            prog["u_alpha"].value = 0.66
+            prog["u_cutout"].value = 1
+            prog["u_fog_range"].value = (FOG_START + 26.0, FOG_END + 70.0)
+            prog["u_uv_offset"].value = (self.time * 0.0040 % 1.0,
+                                         self.time * 0.0012 % 1.0)
+            self.cloud_vao.render(moderngl.TRIANGLES)
+            prog["u_uv_offset"].value = (0.0, 0.0)
             prog["u_alpha"].value = 1.0
-
-        if water_surfaces:
-            # 1. Mirrored sky reflection, matching Azure Water's planar pass.
-            water_level = float(SEA_LEVEL + 1)
-            mirror_y = np.eye(4, dtype=np.float32)
-            mirror_y[1, 1] = -1.0
-            mirror_y[1, 3] = 2.0 * water_level
-            reflected_vp = proj @ view @ mirror_y
-
-            rw, rh = self.water_refl_tex.size
-            self.water_refl_fbo.use()
-            ctx.viewport = (0, 0, rw, rh)
-            ctx.disable(moderngl.DEPTH_TEST)
-            ctx.disable(moderngl.CULL_FACE)
-            ctx.disable(moderngl.BLEND)
-            ctx.depth_mask = False
-            self._set_azure_sky_uniforms(forward, right, up, tan_x, tan_y, reflected=True)
-            self.sky_vao.render(moderngl.TRIANGLES, vertices=3)
-
-            # 2. Copy opaque world color and depth for Azure's refraction/absorption.
-            ctx.screen.use()
-            ctx.viewport = (0, 0, w, h)
-            ctx.copy_framebuffer(self.water_scene_fbo, ctx.screen)
+            prog["u_fog_range"].value = (FOG_START, FOG_END)
+            self.atlas_tex.use(0)
             ctx.depth_mask = True
-            ctx.enable(moderngl.DEPTH_TEST)
-            ctx.enable(moderngl.CULL_FACE)
-
-            # 3. Azure Water's actual fragment shader on the voxel world's water tops.
-            wp = self.azure_water_prog
-            wp["u_view_proj"].write(vp_bytes)
-            wp["u_refl_view_proj"].write(upload_mat(reflected_vp))
-            wp["u_cam_xz"].value = (float(cam[0]), float(cam[2]))
-            wp["u_cam_pos"].value = tuple(float(v) for v in cam)
-            wp["u_screen"].value = (float(w), float(h))
-            wp["u_near"].value = 0.05
-            wp["u_far"].value = 420.0
-            wp["u_time"].value = float(self.time)
-            wp["u_sun_dir"].value = tuple(float(v) for v in SUN_DIR)
-            wp["u_sun_color"].value = (1.0, 0.86, 0.68)
-            wp["u_sun_intensity"].value = 3.2  # Azure Water default sunlight intensity
-            wp["u_deep_color"].value = (0.012, 0.075, 0.14)
-            wp["u_absorb"].value = (0.36, 0.10, 0.055)
-            wp["u_foam_threshold"].value = 0.625
-            wp["u_foam_amount"].value = float(WATER_SETTINGS["foam_amount"])
-            wp["u_detail_amp"].value = float(WATER_SETTINGS["detail_strength"])
-            wp["u_roughness"].value = float(WATER_SETTINGS["roughness"])
-            wp["u_refl_distort"].value = 0.0018
-            wp["u_refract_distort"].value = 0.008
-            wp["u_fog_k"].value = 0.0045
-            wp["u_fog_end"].value = 560.0
-            wind = np.array([0.78, 0.62], dtype=np.float32)
-            wind /= max(float(np.linalg.norm(wind)), 1e-6)
-            wp["u_wind_dir"].value = (float(wind[0]), float(wind[1]))
-            lambdas = np.array([64.0, 41.0, 26.0, 16.5, 10.5, 6.7, 4.3, 2.8], dtype=np.float32) * WATER_SETTINGS["wave_spacing"]
-            ks = 2.0 * math.pi / lambdas
-            amps = 0.22 * (lambdas / lambdas[0]) ** 0.85 * WATER_SETTINGS["wave_strength"]
-            amps[WATER_SETTINGS["wave_count"]:] = 0.0
-            angles = math.atan2(float(wind[0]), float(wind[1])) + np.radians(np.linspace(-26.0, 26.0, 8))
-            dirs = np.stack((np.sin(angles), np.cos(angles)), axis=1).astype(np.float32)
-            omegas = np.sqrt(9.81 * ks) * WATER_SETTINGS["wave_speed"]
-            qs = np.zeros_like(amps)
-            np.divide(0.85, ks * amps * 8.0, out=qs, where=amps > 1e-6)
-            qs = np.minimum(qs, 1.0)
-            wp["u_wave_dir"].write(dirs.tobytes())
-            wp["u_wave_k"].write(ks.astype(np.float32).tobytes())
-            wp["u_wave_amp"].write(amps.astype(np.float32).tobytes())
-            wp["u_wave_q"].write(qs.astype(np.float32).tobytes())
-            wp["u_wave_omega"].write(omegas.astype(np.float32).tobytes())
-            wp["u_amp_total"].value = float(amps.sum())
-
-            self.water_scene_tex.use(0)
-            self.water_scene_depth.use(1)
-            self.water_refl_tex.use(2)
-            wp["u_scene"].value = 0
-            wp["u_scene_depth"].value = 1
-            wp["u_refl"].value = 2
-            ctx.enable(moderngl.DEPTH_TEST)
             ctx.disable(moderngl.BLEND)
-            ctx.depth_mask = False
-            ctx.disable(moderngl.CULL_FACE)
-            for mesh in water_surfaces:
-                key = id(mesh)
-                vao = self.azure_water_vaos.get(key)
-                if vao is None:
-                    vao = ctx.vertex_array(
-                        wp, [(mesh.vbo, "3f 12x 1f", "in_pos", "in_flex")],
-                        index_buffer=self.quad_ibo)
-                    self.azure_water_vaos[key] = vao
-                vao.render(moderngl.TRIANGLES, vertices=mesh.count)
-            ctx.depth_mask = True
-            ctx.enable(moderngl.CULL_FACE)
-
-        if "u_anim_mode" in prog:
-            prog["u_anim_mode"].value = 0
-
-        # Legacy blocky cloud geometry is intentionally not rendered; the
-        # Azure Water procedural sky shader supplies animated layered clouds.
 
         # Remote players (simple blocky avatars + screen-space name tags).
         self.remote_labels = []
@@ -4236,10 +3811,8 @@ class Renderer:
         by = 158
         visible = worlds[:6]
         if not visible:
-            self.text("No worlds yet", w // 2, 224,
-                      scale=3, align="center", color=col(205, 215, 225))
-            self.text("Create your first world below", w // 2, 258,
-                      scale=2, align="center", color=col(170, 190, 210))
+            self.text("No worlds yet. Create your first world!", w // 2, 250,
+                      scale=2, align="center", color=col(205, 215, 225))
         for i, item in enumerate(visible):
             yy = by + i * (bh + 10)
             delete_w = 104
@@ -4247,7 +3820,7 @@ class Renderer:
                              f"{item['name']}   |   SEED {item['seed']}", f"world:{i}")
             self.draw_button(bx + bw - delete_w, yy, delete_w, bh,
                              "DELETE", f"world_delete:{i}")
-        create_y = min(h - 118, (by + max(1, len(visible)) * (bh + 10) + 12) if visible else 300)
+        create_y = min(h - 118, by + max(1, len(visible)) * (bh + 10) + 12)
         self.draw_button(bx, create_y, bw, 50, "CREATE NEW WORLD", "create_world")
         self.draw_button(bx, create_y + 62, bw, 44, "BACK", "world_back")
         if game.world_status:
@@ -4279,10 +3852,14 @@ class Renderer:
         bw, bh = min(650, w - 100), 58
         bx, by = (w - bw) // 2, 170
         visible = worlds[:6]
+        if not visible:
+            self.text("No saved worlds. Create one first.", w // 2, 260,
+                      scale=2, align="center", color=col(220, 220, 220))
         for i, item in enumerate(visible):
             yy = by + i * (bh + 9)
+            marker = "  [SELECTED]" if game.selected_host_world == item["path"] else ""
             self.draw_button(bx, yy, bw, bh,
-                             f"{item['name']}   |   SEED {item['seed']}",
+                             f"{item['name']}   |   SEED {item['seed']}{marker}",
                              f"host_world:{i}")
         bottom = min(h - 112, by + max(1, len(visible)) * (bh + 9) + 12)
         self.draw_button(bx, bottom, bw, 44, "CREATE A WORLD", "host_world_create")
@@ -4639,9 +4216,7 @@ class Renderer:
     # -- frame dispatch -----------------------------------------------------
 
     def draw(self, game: "Game") -> None:
-        # Use elapsed time, not the large absolute performance-counter value.
-        # This preserves float precision in GLSL sin/cos animation inputs.
-        self.time = time.perf_counter() - self.start_time
+        self.time = time.perf_counter()
         if game.state in ("menu", "multiplayer", "world_select", "create_world",
                           "delete_world_confirm", "host_world_select"):
             self.ctx.viewport = (0, 0, self.width, self.height)
@@ -4756,27 +4331,15 @@ def create_window():
                                     pygame.GL_CONTEXT_PROFILE_CORE)
     pygame.display.gl_set_attribute(pygame.GL_DEPTH_SIZE, 24)
     pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
-    flags = pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE
     try:
-        pygame.display.set_mode((WINDOW_W, WINDOW_H), flags, vsync=1)
+        pygame.display.set_mode((WINDOW_W, WINDOW_H),
+                                pygame.OPENGL | pygame.DOUBLEBUF, vsync=1)
     except Exception:
-        pygame.display.set_mode((WINDOW_W, WINDOW_H), flags)
-
-    # Start maximized as a normal window (taskbar/title bar remain available).
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            hwnd = pygame.display.get_wm_info().get("window")
-            if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
-                pygame.event.pump()
-        except Exception:
-            pass
-
+        pygame.display.set_mode((WINDOW_W, WINDOW_H),
+                                pygame.OPENGL | pygame.DOUBLEBUF)
     ctx = moderngl.create_context()
     ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
-    fw, fh = pygame.display.get_surface().get_size()
-    ctx.viewport = (0, 0, fw, fh)
+    fw, fh = ctx.screen.size
     return ctx, fw, fh
 
 
@@ -4786,15 +4349,10 @@ def main() -> None:
                         help="validate assets, world generation, meshing and physics")
     parser.add_argument("--screenshot", metavar="FILE", default=None,
                         help="render a screenshot and exit")
-    parser.add_argument("--record", metavar="FRAME_DIR", default=None,
-                        help="render a short world video as numbered PNG frames")
-    parser.add_argument("--record-seconds", type=int, default=10,
-                        help="duration for --record (default: 10 seconds)")
     parser.add_argument("--scene", default="world",
                         choices=["world", "menu", "pause", "inventory"],
                         help="scene to use with --screenshot")
     parser.add_argument("--seed", type=int, default=2026, help="world seed")
-    parser.add_argument("--coast-test", action="store_true", help="aim the test camera at the nearest beach")
     args = parser.parse_args()
 
     if args.selftest:
@@ -4832,19 +4390,9 @@ def main() -> None:
         renderer.draw_loading(1.0, "READY")
 
         player = Player(world)
-        if args.coast_test:
-            # Seed-2026 shoreline test position: stand on the beach and face the sea.
-            player.pos[:] = (98.5, 33.0, 93.5)
-            player.yaw = math.pi / 2.0
-            player.pitch = -0.24
-            player.fly = True
         game = Game(renderer, world, player)
         if args.screenshot:
             game.auto_screenshot = args.screenshot
-            game.auto_scene = args.scene
-        if args.record:
-            game.auto_record = args.record
-            game.record_seconds = max(2, min(args.record_seconds, 30))
             game.auto_scene = args.scene
         game.run()
     finally:
