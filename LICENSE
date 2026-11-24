@@ -1,66 +1,88 @@
+# PYCRAFT — SOURCE-AVAILABLE PROPRIETARY LICENSE
 
-PYCRAFT — SOURCE-AVAILABLE PROPRIETARY LICENSE
-Copyright (c) 2026 İlter. All rights reserved.
+Copyright © 2026 DataDev. All rights reserved.
 
-1. OWNERSHIP
-PyCraft's original source code, project structure, documentation,
-and original materials are the property of the copyright holder,
-unless a separate third-party license applies.
+## 1. OWNERSHIP
 
-2. PERMITTED USE
+PyCraft's original source code, project structure, documentation, and original materials are the property of the copyright holder, unless a separate third-party license applies.
+
+## 2. PERMITTED USE
+
 You may:
 - View and download the source code from the official repository.
 - Study the source code.
 - Modify copies locally for personal, non-commercial use.
-- Contribute to the official repository through an authorized
-  contributor branch and pull request.
+- Contribute to the official repository through an authorized contributor branch and pull request.
 
-3. RESTRICTIONS
+## 3. RESTRICTIONS
+
 Without prior written permission from the copyright holder, you may not:
-- Republish or redistribute PyCraft or modified versions outside
-  the permissions expressly granted by this license.
-- Sell PyCraft, modified versions, or products substantially
-  incorporating its source code.
+- Republish or redistribute PyCraft or modified versions outside the permissions expressly granted by this license.
+- Sell PyCraft, modified versions, or products substantially incorporating its source code.
 - Use the project or its source code for commercial purposes.
 - Present modified versions as official PyCraft releases.
-- Re-upload the source code to another hosting service or distribute
-  it as a separate project.
+- Re-upload the source code to another hosting service or distribute it as a separate project.
 
-4. GITHUB FORKS
-GitHub's Terms of Service grant GitHub users certain rights to fork
-public repositories through GitHub's platform functionality.
+## 4. GITHUB FORKS
+
+GitHub's Terms of Service grant GitHub users certain rights to fork public repositories through GitHub's platform functionality.
+
 This license does not override those platform-level rights.
 
-A GitHub fork does not grant permission to independently publish,
-redistribute, sell, or commercially exploit PyCraft or modified
-versions outside the rights granted by GitHub and this license.
+A GitHub fork does not grant permission to independently publish, redistribute, sell, or commercially exploit PyCraft or modified versions outside the rights granted by GitHub and this license.
 
-5. CONTRIBUTIONS
-Contributors must receive repository write access from the owner
-before creating and pushing branches directly to the official
-PyCraft repository.
+## 5. CONTRIBUTIONS
+
+Repository write access is granted to contributors who are invited and approved by the repository owner.
+
+Authorized contributors may:
+- Create and maintain their own branches in the official PyCraft repository.
+- Submit pull requests for review.
+- Participate in the development of the project.
 
 Contributions must be submitted through pull requests.
-A contribution is not accepted into the official project until
-an authorized maintainer reviews and merges it.
 
-By submitting a contribution, you confirm that you have the right
-to submit it under these terms.
+A contribution is not accepted into the official project until an authorized maintainer reviews and merges it.
 
-6. PERMISSION REQUESTS
-Written permission is required for uses not expressly permitted
-above.
+By submitting a contribution, you confirm that you have the right to submit it under these terms.
+
+## 6. CONTRIBUTOR ACCESS MAINTENANCE
+
+Every authorized contributor will receive an activity confirmation email once every 15 calendar days.
+
+Each contributor must respond to the confirmation email within 15 calendar days of its delivery.
+
+If a contributor does not respond within this period, their repository write access will be revoked as part of routine contributor access maintenance.
+
+This procedure is an access cleanup measure, not a ban or permanent removal from the project.
+
+The following conditions apply:
+- Existing branches will be preserved.
+- Previous commits and contributions will not be deleted.
+- The contributor will retain access to the public repository.
+- The contributor may request write access again at any time.
+- Write access may be restored after the repository owner's approval.
+
+Revoking write access does not constitute a ban and does not delete or invalidate previous contributions.
+
+The purpose of this policy is to keep the contributor list active, organized, and maintainable.
+
+## 7. PERMISSION REQUESTS
+
+Written permission is required for uses not expressly permitted above.
 
 Contact:
+
 ilter9047@gmail.com
 
-7. THIRD-PARTY MATERIALS
-Third-party assets, libraries, textures, and other materials may
-be subject to their own licenses. This license does not replace
-or override those licenses.
+## 8. THIRD-PARTY MATERIALS
 
-8. NO WARRANTY
-PyCraft is provided "AS IS", without warranty of any kind,
-to the maximum extent permitted by applicable law.
+Third-party assets, libraries, textures, and other materials may be subject to their own licenses.
+
+This license does not replace or override those licenses.
+
+## 9. NO WARRANTY
+
+PyCraft is provided "AS IS", without warranty of any kind, to the maximum extent permitted by applicable law.
 
 All rights not expressly granted are reserved.
