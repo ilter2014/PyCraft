@@ -47,3 +47,4 @@ Hytale_Extra_Ores_Backup*/
 .env
 .env.*
 !.env.example
+Worlds/
