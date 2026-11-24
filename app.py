@@ -2403,9 +2403,19 @@ class Game:
                 self.player.pitch -= dy * 0.0022
                 self.player.pitch = max(math.radians(-89.0),
                                         min(math.radians(89.0), self.player.pitch))
+                if self.riding_boat is not None:
+                    # Mouse controls the rider's view; steering is applied
+                    # smoothly to the hull when forward/turn input is used.
+                    self.riding_boat["look_yaw"] = self.player.yaw
 
     def _key_down(self, event) -> None:
         k = event.key
+
+        if k == pygame.K_SPACE and self.riding_boat is not None:
+            self.dismount_boat()
+            # Give a small upward impulse so leaving the boat feels like a hop.
+            self.player.vel[1] = 4.2
+            return
 
         if k == pygame.K_F11:
             try:
@@ -2757,9 +2767,8 @@ class Game:
             if event.button == 1 and self.break_cool <= 0.0:
                 self.break_block()
             elif event.button == 3 and self.place_cool <= 0.0:
-                if self.riding_boat is not None:
-                    self.dismount_boat()
-                else:
+                # Right-click boards a boat; Space is the only dismount key.
+                if self.riding_boat is None:
                     boat_index = self._boat_hit()
                     if boat_index is not None:
                         self.board_boat(boat_index)
@@ -2841,7 +2850,8 @@ class Game:
         self.player.pitch = 0.0
         self.player.pos[:] = (float(boat["x"]), float(boat["y"]) - 0.78,
                               float(boat["z"]))
-        self.toast = "Riding boat - WASD to move, right-click to dismount"
+        self.player.yaw = float(boat.get("yaw", self.player.yaw))
+        self.toast = "Mouse: look | W/S: move | A/D: steer | Space: jump out"
         self.toast_timer = 2.5
 
     def dismount_boat(self) -> None:
@@ -2885,7 +2895,15 @@ class Game:
             1.0 if keys[self.keybinds["back"]] else 0.0)
         turn = (1.0 if keys[self.keybinds["right"]] else 0.0) - (
             1.0 if keys[self.keybinds["left"]] else 0.0)
-        boat["yaw"] = float(boat.get("yaw", 0.0)) + turn * 1.9 * dt
+        # The boat has one fixed bow direction: it continuously follows
+        # the rider's view heading. Mouse look and A/D therefore rotate
+        # both the camera and the boat, even while the boat is stationary.
+        if turn:
+            self.player.yaw += turn * 1.9 * dt
+        target_yaw = self.player.yaw
+        current_yaw = float(boat.get("yaw", target_yaw))
+        delta_yaw = (target_yaw - current_yaw + math.pi) % math.tau - math.pi
+        boat["yaw"] = current_yaw + delta_yaw * min(1.0, 5.5 * dt)
         x, y, z = float(boat["x"]), float(boat["y"]), float(boat["z"])
         water = any(
             self.world.get(math.floor(x + dx), math.floor(y) - 1,
@@ -2927,7 +2945,7 @@ class Game:
         self.player.pos[:] = (float(boat["x"]), float(boat["y"]) - 0.78,
                               float(boat["z"]))
         self.player.vel[:] = 0.0
-        self.player.yaw = yaw
+        # Keep camera yaw independent so mouse look remains responsive.
         self.player.in_water = False
         self.player.underwater = False
 
